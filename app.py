@@ -75,13 +75,25 @@ def convert_google_drive_url_for_storage(url):
 # ========== Google Sheets Connection ==========
 @st.cache_resource
 def get_gsheet_connection():
-    """Cached Google Sheets connection"""
+    """Cached Google Sheets connection using Streamlit secrets"""
     try:
-        scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly']
-        sa = gspread.service_account(scopes=scopes)  
-        return sa.open("testspreadsheet2").sheet1
+        import json
+        # Load service account info from Streamlit secrets
+        creds_dict = st.secrets["gcp_service_account"]
+        # Convert to dict if it's a string
+        if isinstance(creds_dict, str):
+            creds_dict = json.loads(creds_dict)
+        # Authenticate with gspread using the credentials dictionary
+        gc = gspread.service_account_from_dict(creds_dict)
+        # Open the spreadsheet
+        sh = gc.open("testspreadsheet2")
+        return sh.sheet1  # or return sh if you need full workbook
+    except gspread.SpreadsheetNotFound:
+        st.error("❌ Spreadsheet 'testspreadsheet2' not found. Check the name and sharing settings.")
+        return None
     except Exception as e:
-        st.error(f"Failed to connect to Google Sheets: {e}")
+        st.error(f"❌ Failed to connect to Google Sheets: {e}")
+        st.exception(e)  # Optional: shows full traceback in dev
         return None
 
 @st.cache_data(ttl=300)
@@ -895,6 +907,7 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf"
 
             )
+
 
 
 
