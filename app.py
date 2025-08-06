@@ -207,11 +207,11 @@ if st.session_state.role == "admin":
         st.subheader("Choose Your Action:")
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🗃 Edit Database", use_column_width=True, help="Add, update, or delete products"):
+            if st.button("🗃 Edit Database", use_container_width=True, help="Add, update, or delete products"):
                 st.session_state.admin_choice = "database"
                 st.rerun()
         with col2:
-            if st.button("📋 Make Quotation", use_column_width=True, help="Create quotation for customers"):
+            if st.button("📋 Make Quotation", use_container_width=True, help="Create quotation for customers"):
                 st.session_state.admin_choice = "quotation"
                 st.rerun()
         st.info("👆 Please select what you would like to do")
@@ -907,6 +907,7 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf"
 
             )
+
 
 
 
