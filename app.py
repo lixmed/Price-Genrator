@@ -78,7 +78,7 @@ def get_gsheet_connection():
     """Cached Google Sheets connection"""
     try:
         scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly']
-        sa = gspread.service_account(scopes=scopes)
+        sa = gspread.service_account(scopes=scopes)  
         return sa.open("testspreadsheet2").sheet1
     except Exception as e:
         st.error(f"Failed to connect to Google Sheets: {e}")
@@ -895,5 +895,6 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf"
 
             )
+
 
 
