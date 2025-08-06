@@ -853,7 +853,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         subtotal = basePrice
         total_after_discount = final_total
         discount = subtotal - total_after_discount
-        vat = total_after_discount * 0.15
+        vat = total_after_discount * 0.14
         grand_total = total_after_discount + vat
         
         # Create summary table
@@ -861,7 +861,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             ["Total", f" {subtotal:.2f}"],
             ["Special Discount", f" {discount:.2f}"],
             ["Total After Discount", f" {total_after_discount:.2f}"],
-            ["VAT (15%)", f" {vat:.2f}"],
+            ["VAT (14%)", f" {vat:.2f}"],
             ["Grand Total", f" {grand_total:.2f}"]
         ]
         summary_table = Table(summary_data, colWidths=[590, 150])
@@ -908,6 +908,7 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf"
 
             )
+
 
 
 
