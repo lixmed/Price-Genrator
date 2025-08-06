@@ -784,8 +784,9 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
 </para>
 """
         elems.append(Paragraph(payment_info, aligned_style))
-        elems.append(Spacer(1, 70))
-        
+        elems.append(Spacer(1, 20))  # Optional: reduce space before break
+        from reportlab.platypus import PageBreak
+        elems.append(PageBreak())        
         # Configure table styles
         desc_style = ParagraphStyle(name='Description', fontSize=12, leading=16, alignment=1)
         styleN = ParagraphStyle(name='Normal', fontSize=12, leading=12, alignment=1)
@@ -907,6 +908,7 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf"
 
             )
+
 
 
 
