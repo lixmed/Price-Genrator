@@ -15,12 +15,7 @@ import os
 from datetime import datetime, timedelta
 import gspread
 from gspread_dataframe import get_as_dataframe, set_with_dataframe
-# DEBUG: Check if secrets are loaded
-if "type" in st.secrets:
-    st.write("✅ Secrets loaded successfully")
-else:
-    st.write("❌ Secrets not loaded")
-    st.write("Current secrets:", st.secrets)
+
 # ========== Page Config ==========
 st.set_page_config(page_title="Quotation Builder", page_icon="🪑", layout="wide")
 
