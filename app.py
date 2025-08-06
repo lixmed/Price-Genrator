@@ -642,7 +642,7 @@ else:
 st.markdown("---")
 st.markdown(f"### 💰 Grand Total: {final_total:.2f} EGP")
 if output_data:
-    st.dataframe(pd.DataFrame(output_data), use_column_width=True)
+    st.dataframe(pd.DataFrame(output_data), use_container_width=True)
 
 # ========== PDF Generation Functions ==========
 def download_image_for_pdf(url, max_size=(300, 300)):
@@ -908,6 +908,7 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf"
 
             )
+
 
 
 
