@@ -89,15 +89,22 @@ def get_gsheet_connection():
         # Get spreadsheet ID from the same secrets block
         spreadsheet_id = creds_dict["spreadsheet_id"]
 
-        # Authenticate with gspread using the credentials dictionary
+        # Authenticate with gspread
         gc = gspread.service_account_from_dict(creds_dict)
 
         # Open the spreadsheet by ID
         sh = gc.open_by_key(spreadsheet_id)
-        return sh.sheet1  # Return the first sheet
 
+        # ✅ افتح الورقة اللي اسمها "Chairs" بالضبط
+        worksheet = sh.worksheet("Chairs")  # ← هنا التغيير المهم
+
+        return worksheet  # هيرجع الورقة المطلوبة
+
+    except gspread.WorksheetNotFound:
+        st.error("❌ Worksheet 'Chairs' not found. Check the sheet name (case-sensitive).")
+        return None
     except gspread.SpreadsheetNotFound:
-        st.error(f"❌ Spreadsheet with ID '{spreadsheet_id}' not found. Check the sharing settings.")
+        st.error(f"❌ Spreadsheet with ID '{spreadsheet_id}' not found. Check sharing settings.")
         return None
     except Exception as e:
         st.error(f"❌ Failed to connect to Google Sheets: {e}")
@@ -1040,4 +1047,5 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 data=f,
                 file_name=new_record["pdf_filename"],
                 mime="application/pdf"
+
             )
