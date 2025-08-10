@@ -40,6 +40,9 @@ def init_session_state():
         "sheet_data": None,
         "last_sheet_update": 0,
         "history": [],
+        "pdf_data": [],  
+        "cart": [],    
+        "edit_mode": False,
     }
     for key, default_value in defaults.items():
         if key not in st.session_state:
@@ -141,7 +144,7 @@ def display_product_image(c2, prod, image_url, width=100):
             try:
                 img_bytes = fetch_image_bytes(img_url)
                 img = PILImage.open(BytesIO(img_bytes))
-                st.image(img, caption=prod, width=width)  
+                st.image(img, caption=prod, use_container_width=False)
             except Exception as e:
                 st.error("❌ Image Error")
                 st.caption(str(e))
@@ -633,6 +636,10 @@ if ((st.session_state.role == "buyer") or
 
     company_details = st.session_state.company_details
     st.markdown(f"📋 Quotation for {company_details['company_name']}")
+
+    if st.session_state.get('form_submitted') and len(st.session_state.get('pdf_data', [])) > 0:
+        st.info("🔄 This quotation was restored from your history. You can edit it below.")
+
     st.subheader("Select Products")
     st.info("📝 Select products below to add them to your quotation")
 
@@ -978,23 +985,31 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         elems.append(product_table)
 
         # Summary section
+        # subtotal = sum(float(r.get('Price per item', 0)) * float(r.get('Quantity', 1)) for r in data_from_hash)
+        # total_after_discount = total
+        # discount = subtotal - total_after_discount
+        # vat = total_after_discount * 0.15
+        # grand_total = total_after_discount + vat
+
+
         subtotal = sum(float(r.get('Price per item', 0)) * float(r.get('Quantity', 1)) for r in data_from_hash)
         total_after_discount = total
         discount = subtotal - total_after_discount
         vat = total_after_discount * 0.15
         grand_total = total_after_discount + vat
-
         summary_data = [
-            ["Total", f"{subtotal:.2f}"],
-            ["Special Discount", f"{discount:.2f}"],
-            ["Total After Discount", f"{total_after_discount:.2f}"],
-            ["VAT (15%)", f"{vat:.2f}"],
-            ["Grand Total", f"{grand_total:.2f}"]
+            ["Total", f"{subtotal:.2f} EGP"]
         ]
-        if has_discounts:
-            summary_table = Table(summary_data, colWidths=[615, 150])
-        else:
-            summary_table = Table(summary_data, colWidths=[540, 150])
+        if discount > 0:
+            summary_data.append(["Special Discount", f"- {discount:.2f} EGP"])
+
+        summary_data.append(["Total After Discount", f"{total_after_discount:.2f} EGP"])
+        summary_data.append(["VAT (15%)", f"{vat:.2f} EGP"])
+        summary_data.append(["Grand Total", f"{grand_total:.2f} EGP"])
+
+        col_widths = [615, 150] if has_discounts > 0 else [540, 150]
+        summary_table = Table(summary_data, colWidths=col_widths)
+
         summary_table.setStyle(TableStyle([
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
@@ -1002,8 +1017,10 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             ('FONTSIZE', (0, 0), (-1, -1), 12),
             ('GRID', (0, 0), (-1, -1), 1.0, colors.black),
             ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
+            ('TEXTCOLOR', (1, 1), (1, 1), colors.red) if discount > 0 else ('TEXTCOLOR', (1, 1), (1, 1), colors.black),
         ]))
         elems.append(summary_table)
+
 
         try:
             doc.build(elems, onFirstPage=header_footer, onLaterPages=header_footer)
@@ -1047,8 +1064,4 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 data=f,
                 file_name=new_record["pdf_filename"],
                 mime="application/pdf"
-
             )
-
-
-
