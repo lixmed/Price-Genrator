@@ -144,7 +144,7 @@ def display_product_image(c2, prod, image_url, width=100):
             try:
                 img_bytes = fetch_image_bytes(img_url)
                 img = PILImage.open(BytesIO(img_bytes))
-                st.image(img, caption=prod, width=150)
+                st.image(img, caption=prod, width=100)
             except Exception as e:
                 st.error("❌ Image Error")
                 st.caption(str(e))
@@ -1065,6 +1065,7 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 file_name=new_record["pdf_filename"],
                 mime="application/pdf"
             )
+
 
 
 
