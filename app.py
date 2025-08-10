@@ -134,7 +134,7 @@ def fetch_image_bytes(url):
     resp.raise_for_status()
     return resp.content
 
-def display_product_image(c2, prod, image_url, width=150):
+def display_product_image(c2, prod, image_url, width=100):
     img_url = convert_google_drive_url_for_display(image_url)
     with c2:
         if img_url:
@@ -1049,5 +1049,6 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf"
 
             )
+
 
 
