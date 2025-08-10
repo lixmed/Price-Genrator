@@ -134,14 +134,14 @@ def fetch_image_bytes(url):
     resp.raise_for_status()
     return resp.content
 
-def display_product_image(c2, prod, image_url, width=100):
+def display_product_image(c2, prod, image_url, width=150):
     img_url = convert_google_drive_url_for_display(image_url)
     with c2:
         if img_url:
             try:
                 img_bytes = fetch_image_bytes(img_url)
                 img = PILImage.open(BytesIO(img_bytes))
-                st.image(img, caption=prod, use_column_width=False)
+                st.image(img, caption=prod, width=width)  
             except Exception as e:
                 st.error("❌ Image Error")
                 st.caption(str(e))
@@ -1049,4 +1049,5 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf"
 
             )
+
 
