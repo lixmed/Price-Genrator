@@ -1051,7 +1051,7 @@ if st.button("📅 Generate PDF Quotation") and output_data:
             "total": final_total,
             "items": output_data.copy(),
             "hash": data_hash,
-            "pdf_filename": f"{company_details['company_name']}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+            "pdf_filename": f"{company_details['company_name']}{datetime.now().strftime('%Y%m%d%H%M')}.pdf"
         }
         st.session_state.history.append(new_record)
         st.success("✅ Quotation saved to history!")
@@ -1064,3 +1064,5 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 file_name=new_record["pdf_filename"],
                 mime="application/pdf"
             )
+
+=
