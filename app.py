@@ -593,7 +593,12 @@ if st.session_state.role == "admin":
                 warranty = st.text_input("Warranty", value=existing_data.get("warranty", "1 year"))
                 down_payment = st.number_input("Down payment (%)", min_value=0.0, max_value=100.0, value=float(existing_data.get("down_payment", 50.0)))
                 delivery = st.text_input("Delivery", value=existing_data.get("delivery", "Expected in 3–4 weeks"))
-                vat_note = st.text_input("VAT Note", value=existing_data.get("vat_note", "Prices exclude 14% VAT"))
+                selected_vat_rate = st.selectbox(
+                    "Select VAT Rate (%)",
+                    options=[14, 13],
+                    index=0 if existing_data.get("vat_note", "14") == "14" else 1
+                )
+                vat_note = f"Prices exclude {selected_vat_rate}% VAT"
                 shipping_note = st.text_input("Shipping Note", value=existing_data.get("shipping_note", "Shipping & Installation fees to be added"))
                 st.subheader("Payment Info")
                 bank = st.text_input("Bank", value=existing_data.get("bank", "CIB"))
@@ -630,7 +635,8 @@ if st.session_state.role == "admin":
                             "warranty": warranty,
                             "down_payment": down_payment,
                             "delivery": delivery,
-                            "vat_note": vat_note,
+                            "vat_note": vat_note,  # Display version
+                            "vat_rate": selected_vat_rate / 100.0,  # Store as decimal for calculation
                             "shipping_note": shipping_note,
                             "bank": bank,
                             "iban": iban,
@@ -713,7 +719,12 @@ elif st.session_state.role == "buyer":
             warranty = st.text_input("Warranty", value=existing_data.get("warranty", "1 year"))
             down_payment = st.number_input("Down payment (%)", min_value=0.0, max_value=100.0, value=float(existing_data.get("down_payment", 50.0)))
             delivery = st.text_input("Delivery", value=existing_data.get("delivery", "Expected in 3–4 weeks"))
-            vat_note = st.text_input("VAT Note", value=existing_data.get("vat_note", "Prices exclude 14% VAT"))
+            selected_vat_rate = st.selectbox(
+                    "Select VAT Rate (%)",
+                    options=[14, 13],
+                    index=0 if existing_data.get("vat_note", "14") == "14" else 1
+                )
+            vat_note = f"Prices exclude {selected_vat_rate}% VAT"
             shipping_note = st.text_input("Shipping Note", value=existing_data.get("shipping_note", "Shipping & Installation fees to be added"))
             st.subheader("Payment Info")
             bank = st.text_input("Bank", value=existing_data.get("bank", "CIB"))
@@ -750,7 +761,8 @@ elif st.session_state.role == "buyer":
                         "warranty": warranty,
                         "down_payment": down_payment,
                         "delivery": delivery,
-                        "vat_note": vat_note,
+                        "vat_note": vat_note,  # Display version
+                        "vat_rate": selected_vat_rate / 100.0,  # Store as decimal for calculation
                         "shipping_note": shipping_note,
                         "bank": bank,
                         "iban": iban,
@@ -1133,14 +1145,19 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         subtotal = sum(float(r.get('Price per item', 0)) * float(r.get('Quantity', 1)) for r in data_from_hash)
         total_after_discount = total
         discount_amount = subtotal - total_after_discount
-        vat = total_after_discount * 0.14
+        vat_rate = company_details.get("vat_rate", 0.14)  # Default to 14% if not set
+        vat = total_after_discount * vat_rate
         grand_total = total_after_discount + vat
 
         summary_data = [["Total", f"{subtotal:.2f} EGP"]]
         if discount_amount > 0:
             summary_data.append(["Special Discount", f"- {discount_amount:.2f} EGP"])
         summary_data.append(["Total After Discount", f"{total_after_discount:.2f} EGP"])
-        summary_data.append(["VAT (14%)", f"{vat:.2f} EGP"])
+        if vat_rate == 0.14:
+            summary_data.append(["VAT (14%)", f"{vat:.2f} EGP"])
+        elif vat_rate == 0.13:
+            summary_data.append(["VAT (13%)", f"{vat:.2f} EGP"])
+        # summary_data.append(["VAT (14%)", f"{vat:.2f} EGP"])
         summary_data.append(["Grand Total", f"{grand_total:.2f} EGP"])
 
         summary_col_widths = [total_table_width - 150, 150]
@@ -1286,22 +1303,3 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
