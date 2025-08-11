@@ -725,7 +725,7 @@ if ((st.session_state.role == "buyer") or
     # 💥 HOOK: AI Discount Negotiator
     if not checkDiscount:
         overall_discount = st.number_input("🧮 Overall Quotation Discount (%)", min_value=0.0, max_value=100.0, step=0.1, value=0.0)
-        if overall_discount > 15.0:
+        if overall_discount > 14.0:
             if st.button("🚀 Request AI Approval for High Discount"):
                 with st.spinner("📡 Connecting to HQ AI Negotiator..."):
                     time.sleep(1.2)
@@ -739,7 +739,7 @@ if ((st.session_state.role == "buyer") or
                 st.balloons()
                 final_total = total_sum * (1 - 17.3 / 100)
             else:
-                st.warning("💡 Try clicking 'Request AI Approval' for discounts over 15%!")
+                st.warning("💡 Try clicking 'Request AI Approval' for discounts over 14%!")
         else:
             final_total = total_sum * (1 - overall_discount / 100)
 
@@ -989,7 +989,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         if discount_amount > 0:
             summary_data.append(["Special Discount", f"- {discount_amount:.2f} EGP"])
         summary_data.append(["Total After Discount", f"{total_after_discount:.2f} EGP"])
-        summary_data.append(["VAT (15%)", f"{vat:.2f} EGP"])
+        summary_data.append(["VAT (14%)", f"{vat:.2f} EGP"])
         summary_data.append(["Grand Total", f"{grand_total:.2f} EGP"])
 
         summary_col_widths = [total_table_width - 150, 150]
@@ -1056,6 +1056,7 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 file_name=new_record["pdf_filename"],
                 mime="application/pdf"
             )
+
 
 
 
