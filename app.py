@@ -1009,8 +1009,6 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
             ('TEXTCOLOR', (1, 1), (1, 1), colors.red) if discount_amount > 0 else ('TEXTCOLOR', (1, 1), (1, 1), colors.black),
         ]))
-
-        elems.append(Spacer(1, 10))
         elems.append(summary_table)
 
         # Build PDF
@@ -1072,6 +1070,7 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 file_name=new_record["pdf_filename"],
                 mime="application/pdf"
             )
+
 
 
 
