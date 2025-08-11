@@ -887,7 +887,6 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         </para>
         """
         elems.append(Paragraph(payment_info, aligned_style))
-        elems.append(Spacer(1, 90))
         elems.append(PageBreak())
 
         # Table styles
@@ -1064,6 +1063,7 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 file_name=new_record["pdf_filename"],
                 mime="application/pdf"
             )
+
 
 
 
