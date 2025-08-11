@@ -758,7 +758,7 @@ if ((st.session_state.role == "buyer") or
 
 # ========== PDF Generation Functions ==========
 
-def download_image_for_pdf(url, max_size=(300, 300)):
+def _image_for_pdf(url, max_size=(350, 350)):
     try:
         response = requests.get(url, timeout=5)
         response.raise_for_status()
@@ -1062,6 +1062,7 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 file_name=new_record["pdf_filename"],
                 mime="application/pdf"
             )
+
 
 
 
