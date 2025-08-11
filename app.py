@@ -781,13 +781,14 @@ def download_image_for_pdf(url, max_size=(300, 300)):
         return None
 
 @st.cache_data
-@st.cache_data
 def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png"):
     def build_pdf(data, total, company_details, hdr_path, ftr_path):
+        # Create temporary PDF file
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
         pdf_path = tmp.name
         tmp.close()
 
+        # Set up document
         doc = SimpleDocTemplate(
             pdf_path,
             pagesize=A3,
@@ -804,8 +805,6 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         aligned_style = ParagraphStyle(
             name='LeftAligned',
             parent=styles['Normal'],
-            leftIndent=0,
-            firstLineIndent=0,
             alignment=0,
             spaceBefore=12,
             spaceAfter=12
@@ -813,7 +812,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
 
         def header_footer(canvas, doc):
             canvas.saveState()
-            # Header
+            # Header image
             if hdr_path and os.path.exists(hdr_path):
                 img = PILImage.open(hdr_path)
                 w, h = img.size
@@ -821,7 +820,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 img_h = img_w * (h / w)
                 canvas.drawImage(hdr_path, 0, A3[1] - img_h + 10, width=img_w, height=img_h)
 
-            # Footer
+            # Footer image
             footer_height = 0
             if ftr_path and os.path.exists(ftr_path):
                 img2 = PILImage.open(ftr_path)
@@ -837,12 +836,9 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             canvas.drawRightString(doc.width + doc.leftMargin, footer_height + 10, str(page_num))
             canvas.restoreState()
 
-        # === Company & Contact Details ===
+        # === Company Details ===
         detail_lines = [
-            "<para align='left'>",
-            "<font size=14>",
-            "<b>Company Address:</b> <font color='black'>Al Salam First, Cairo Governorate, Al Qahirah, Cairo</font><br/>",
-            "<b>Company Phone:</b> <font color='black'>01025780717</font><br/><br/>",
+            "<para align='left'><font size=14>",
             f"<b>Date:</b> <font color='black'>{company_details['current_date']}</font><br/>",
             f"<b>Valid Till:</b> <font color='black'>{company_details['valid_till']}</font><br/>",
             f"<b>Quotation Validity:</b> <font color='black'>{company_details['quotation_validity']}</font><br/>",
@@ -856,8 +852,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         detail_lines.append(f"<b>Cell Phone:</b> <font color='black'>{company_details['contact_phone']}</font><br/>")
         if company_details.get("contact_email"):
             detail_lines.append(f"<b>Contact Email:</b> <font color='black'>{company_details['contact_email']}</font><br/>")
-        detail_lines.append("</font>")
-        detail_lines.append("</para>")
+        detail_lines.append("</font></para>")
         details = "".join(detail_lines)
         elems.append(Spacer(1, 40))
         elems.append(Paragraph(details, aligned_style))
@@ -892,6 +887,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         </para>
         """
         elems.append(Paragraph(payment_info, aligned_style))
+        elems.append(Spacer(1, 90))
         elems.append(PageBreak())
 
         # === Table Setup ===
@@ -910,7 +906,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         data_from_hash = st.session_state.get('pdf_data', [])
         has_discounts = any(float(item.get('Discount %', 0)) > 0 for item in data_from_hash)
 
-        # === Define Headers ===
+        # === Define Headers (Insert "Price Before Discount" before Unit Price) ===
         base_headers = ["Ser.", "Product", "Image", "SKU", "Details", "QTY", "Price Before Discount", "Unit Price", "Line Total"]
         if has_discounts:
             base_headers.insert(8, "Discount")  # After Unit Price
@@ -923,11 +919,11 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             img_element = "No Image"
             if r.get("Image"):
                 download_url = convert_google_drive_url_for_storage(r["Image"])
-                temp_img_path = download_image_for_pdf(download_url, max_size=(180, 180))  # Smaller image
+                temp_img_path = download_image_for_pdf(download_url, max_size=(160, 160))
                 if temp_img_path:
                     try:
                         img = RLImage(temp_img_path)
-                        img._restrictSize(180, 180)
+                        img._restrictSize(160, 160)
                         img.hAlign = 'CENTER'
                         img.vAlign = 'MIDDLE'
                         img_element = img
@@ -963,14 +959,13 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             row.append(Paragraph(safe_float(r.get('Total price')), styleN))
             product_table_data.append(row)
 
-        # === Column Widths (Total width = doc.width ≈ 792 - 80 = 712) ===
-        col_widths = [30, 100, 130, 55, 150, 45, 70, 65, 65]  # Base: no discount
+        # === Column Widths (Total ≈ 712pt) ===
+        col_widths = [30, 100, 120, 55, 140, 45, 70, 65, 65]  # Base widths
         if has_discounts:
             col_widths.insert(8, 60)  # Insert "Discount" column width
 
         total_table_width = sum(col_widths)
         table = Table(product_table_data, colWidths=col_widths, repeatRows=1)
-
         table.setStyle(TableStyle([
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 11),
@@ -980,17 +975,15 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             ('FONTSIZE', (0, 1), (-1, -1), 11),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('LEADING', (0, 0), (-1, -1), 12),
             ('GRID', (0, 0), (-1, -1), 1, colors.black),
             ('LEFTPADDING', (0, 0), (-1, -1), 4),
             ('RIGHTPADDING', (0, 0), (-1, -1), 4),
             ('TOPPADDING', (0, 0), (-1, -1), 6),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ]))
-
         elems.append(table)
 
-        # === Summary Table (Must Match Item Table Width) ===
+        # === Summary Table (Match item table width) ===
         subtotal = sum(float(r.get('Price per item', 0)) * float(r.get('Quantity', 1)) for r in data_from_hash)
         total_after_discount = total
         discount_amount = subtotal - total_after_discount
@@ -1004,9 +997,8 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         summary_data.append(["VAT (15%)", f"{vat:.2f} EGP"])
         summary_data.append(["Grand Total", f"{grand_total:.2f} EGP"])
 
-        # Match summary table width to item table
+        # Match summary table width exactly
         summary_col_widths = [total_table_width - 150, 150]
-
         summary_table = Table(summary_data, colWidths=summary_col_widths)
         summary_table.setStyle(TableStyle([
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
@@ -1024,17 +1016,31 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         # Build PDF
         try:
             doc.build(elems, onFirstPage=header_footer, onLaterPages=header_footer)
+        except Exception as e:
+            print(f"PDF build failed: {e}")
+            raise
         finally:
             for temp_file in temp_files:
                 try:
                     os.unlink(temp_file)
                 except Exception as e:
-                    print(f"Failed to delete temp image: {e}")
+                    print(f"Failed to delete temp file: {e}")
 
-        return pdf_path
+        return pdf_path  # Always return the path
 
+    # Ensure data is stored in session state
     st.session_state.pdf_data = st.session_state.get('pdf_data', [])
-    return build_pdf([], total, company_details, hdr_path, ftr_path)
+
+    # Generate a hash to use caching correctly
+    data_str = str(st.session_state.pdf_data) + str(total) + str(company_details)
+    current_hash = hashlib.md5(data_str.encode()).hexdigest()
+
+    if current_hash != data_hash:
+        st.warning("Data changed, regenerating PDF...")
+        # Force rebuild if hash doesn't match
+        return build_pdf(st.session_state.pdf_data, total, company_details, hdr_path, ftr_path)
+
+    return build_pdf(st.session_state.pdf_data, total, company_details, hdr_path, ftr_path)
     
 # ========== Generate PDF & Save to History ==========
 if st.button("📅 Generate PDF Quotation") and output_data:
@@ -1066,6 +1072,7 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 file_name=new_record["pdf_filename"],
                 mime="application/pdf"
             )
+
 
 
 
