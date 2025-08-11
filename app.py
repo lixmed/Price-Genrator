@@ -13,6 +13,7 @@ import gspread
 from gspread_dataframe import get_as_dataframe, set_with_dataframe
 from reportlab.lib.enums import TA_CENTER
 from reportlab.platypus import Paragraph, Spacer, PageBreak
+from reportlab.platypus import KeepInFrame
 
 # ========== Page Config ==========
 st.set_page_config(page_title="Quotation Builder", page_icon="🪑", layout="wide")
@@ -914,17 +915,22 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             img_element = "No Image"
             if r.get("Image"):
                 download_url = convert_google_drive_url_for_storage(r["Image"])
-                temp_img_path = download_image_for_pdf(download_url, max_size=(160, 160))
+                temp_img_path = download_image_for_pdf(download_url, max_size=(120, 100))  # Smaller!
                 if temp_img_path:
                     try:
                         img = RLImage(temp_img_path)
-                        img._restrictSize(160, 160)
+                        img.drawWidth = 110  # Fixed width
+                        img.drawHeight = 90  # Fixed height
                         img.hAlign = 'CENTER'
                         img.vAlign = 'MIDDLE'
-                        img_element = img
+                        img.preserveAspectRatio = True
+                        # Wrap in a Paragraph or use as-is — best to put in a Spacer container
+                        img_component = KeepInFrame(120, 100, [img], mode='shrink')  # ← This is key!
+                        img_element = img_component
                         temp_files.append(temp_img_path)
                     except Exception as e:
                         print(f"Error creating image element: {e}")
+                        img_element = "Image Error"
 
             details_text = (
                 f"<b>Description:</b> {safe_str(r.get('Description'))}<br/>"
@@ -1056,6 +1062,7 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 file_name=new_record["pdf_filename"],
                 mime="application/pdf"
             )
+
 
 
 
