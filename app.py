@@ -782,13 +782,13 @@ def download_image_for_pdf(url, max_size=(300, 300)):
 
 @st.cache_data
 def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png"):
+    # This inner function does the actual PDF building
     def build_pdf(data, total, company_details, hdr_path, ftr_path):
-        # Create temporary PDF file
+        # Create temp file
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
         pdf_path = tmp.name
         tmp.close()
 
-        # Set up document
         doc = SimpleDocTemplate(
             pdf_path,
             pagesize=A3,
@@ -812,15 +812,12 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
 
         def header_footer(canvas, doc):
             canvas.saveState()
-            # Header image
             if hdr_path and os.path.exists(hdr_path):
                 img = PILImage.open(hdr_path)
                 w, h = img.size
                 img_w = doc.width + doc.leftMargin + doc.rightMargin
                 img_h = img_w * (h / w)
                 canvas.drawImage(hdr_path, 0, A3[1] - img_h + 10, width=img_w, height=img_h)
-
-            # Footer image
             footer_height = 0
             if ftr_path and os.path.exists(ftr_path):
                 img2 = PILImage.open(ftr_path)
@@ -829,8 +826,6 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 img_h2 = img_w2 * (h2 / w2)
                 canvas.drawImage(ftr_path, 0, 1, width=img_w2, height=img_h2)
                 footer_height = img_h2
-
-            # Page number
             canvas.setFont('Helvetica', 10)
             page_num = canvas.getPageNumber()
             canvas.drawRightString(doc.width + doc.leftMargin, footer_height + 10, str(page_num))
@@ -903,16 +898,16 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         def safe_float(val):
             return "" if is_empty(val) else f"{float(val):.2f}"
 
-        data_from_hash = st.session_state.get('pdf_data', [])
+        # ✅ Use the passed-in data (not empty list)
+        data_from_hash = data  # This is the key fix!
         has_discounts = any(float(item.get('Discount %', 0)) > 0 for item in data_from_hash)
 
-        # === Define Headers (Insert "Price Before Discount" before Unit Price) ===
-        base_headers = ["Ser.", "Product", "Image", "SKU", "Details", "QTY", "Before Disc.", "Net Price", "Total"]
+        # === Headers with shortened names ✅===
+        base_headers = ["Ser.", "Item", "Image", "SKU", "Specs", "QTY", "Before Disc.", "Net Price", "Total"]
         if has_discounts:
-            base_headers.insert(8, "Discount")  # After Unit Price
+            base_headers.insert(8, "Disc %")  # After "Net Price"
 
         product_table_data = [base_headers]
-
         temp_files = []
 
         for idx, r in enumerate(data_from_hash, start=1):
@@ -939,7 +934,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             details_para = Paragraph(details_text, desc_style)
 
             unit_price = float(r.get('Price per item', 0))
-            price_before_discount = unit_price * 1.2  # Reverse 20% discount
+            price_before_discount = unit_price * 1.2  #  20% discount → ×1.2
 
             row = [
                 str(idx),
@@ -959,10 +954,10 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             row.append(Paragraph(safe_float(r.get('Total price')), styleN))
             product_table_data.append(row)
 
-        # === Column Widths (Total ≈ 712pt) ===
-        col_widths = [30, 100, 120, 55, 140, 45, 70, 65, 65]  # Base widths
+        # === Column Widths (Tight but readable) ===
+        col_widths = [30, 90, 120, 55, 130, 45, 65, 65, 65]  # Total: ~700pt
         if has_discounts:
-            col_widths.insert(8, 60)  # Insert "Discount" column width
+            col_widths.insert(8, 55)  # "Disc %" column
 
         total_table_width = sum(col_widths)
         table = Table(product_table_data, colWidths=col_widths, repeatRows=1)
@@ -997,7 +992,6 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         summary_data.append(["VAT (15%)", f"{vat:.2f} EGP"])
         summary_data.append(["Grand Total", f"{grand_total:.2f} EGP"])
 
-        # Match summary table width exactly
         summary_col_widths = [total_table_width - 150, 150]
         summary_table = Table(summary_data, colWidths=summary_col_widths)
         summary_table.setStyle(TableStyle([
@@ -1024,20 +1018,12 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 except Exception as e:
                     print(f"Failed to delete temp file: {e}")
 
-        return pdf_path  # Always return the path
+        return pdf_path  # ✅ Always return valid path
 
-    # Ensure data is stored in session state
+    # ✅ Ensure data is in session state
     st.session_state.pdf_data = st.session_state.get('pdf_data', [])
 
-    # Generate a hash to use caching correctly
-    data_str = str(st.session_state.pdf_data) + str(total) + str(company_details)
-    current_hash = hashlib.md5(data_str.encode()).hexdigest()
-
-    if current_hash != data_hash:
-        st.warning("Data changed, regenerating PDF...")
-        # Force rebuild if hash doesn't match
-        return build_pdf(st.session_state.pdf_data, total, company_details, hdr_path, ftr_path)
-
+    # ✅ Pass the actual data (not [])
     return build_pdf(st.session_state.pdf_data, total, company_details, hdr_path, ftr_path)
     
 # ========== Generate PDF & Save to History ==========
@@ -1070,6 +1056,7 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 file_name=new_record["pdf_filename"],
                 mime="application/pdf"
             )
+
 
 
 
