@@ -939,7 +939,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             details_para = Paragraph(details_text, desc_style)
 
             unit_price = float(r.get('Price per item', 0))
-            price_before_discount = unit_price * 1.25  # Reverse 20% discount
+            price_before_discount = unit_price * 1.2  # Reverse 20% discount
 
             row = [
                 str(idx),
@@ -987,7 +987,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         subtotal = sum(float(r.get('Price per item', 0)) * float(r.get('Quantity', 1)) for r in data_from_hash)
         total_after_discount = total
         discount_amount = subtotal - total_after_discount
-        vat = total_after_discount * 0.15
+        vat = total_after_discount * 0.14
         grand_total = total_after_discount + vat
 
         summary_data = [["Total", f"{subtotal:.2f} EGP"]]
@@ -1072,6 +1072,7 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 file_name=new_record["pdf_filename"],
                 mime="application/pdf"
             )
+
 
 
 
