@@ -392,143 +392,236 @@ if st.session_state.role == "admin":
     with col1:
         if st.button("← Back to Menu"):
             st.session_state.admin_choice = None
-            if 'form_submitted' in st.session_state:
-                del st.session_state.form_submitted
-            if 'edit_mode' in st.session_state:
-                del st.session_state.edit_mode
-            if 'company_details' in st.session_state:
-                del st.session_state.company_details
+            # Clean up session state variables
+            for key in list(st.session_state.keys()):
+                if key in ['form_submitted', 'edit_mode', 'company_details', 'cart', 
+                          'selected_items', 'pdf_data', 'quotation_data']:
+                    del st.session_state[key]
             st.rerun()
     with col2:
         if st.session_state.admin_choice == "database":
-            st.markdown("Current Mode: 🗃 Database Management")
+            st.markdown("### Current Mode: 🗃 Database Management")
         else:
-            st.markdown("Current Mode: 📋 Quotation Creation")
+            st.markdown("### Current Mode: 📋 Quotation Creation")
     st.markdown("---")
 
+    # ========== DATABASE MANAGEMENT ==========
     if st.session_state.admin_choice == "database":
         tab1, tab2, tab3 = st.tabs(["➕ Add Product", "🗑 Delete Product", "✏ Update Product"])
+        
+
         with tab1:
             st.subheader("Add New Product")
             form_col, image_col = st.columns([2, 1])
+            
             with form_col:
                 with st.form("add_product_form"):
-                    new_item = st.text_input("Product Name")
-                    new_price = st.number_input("Price per Item", min_value=0.0, format="%.2f")
+                    new_item = st.text_input("Product Name*", help="Required field")
+                    new_price = st.number_input("Price per Item", min_value=0.0, format="%.2f", value=0.0)
                     new_desc = st.text_area("Material / Description")
                     new_color = st.text_input("Color")
                     new_dim = st.text_input("Dimensions (Optional)")
+                    new_warranty = st.text_input("Warranty (e.g., 1 year)", help="Enter warranty information")
                     new_image = st.text_input("Image URL (Optional)", help="Paste Google Drive link or direct image URL")
-                    if st.form_submit_button("✅ Add to Sheet"):
-                        if not new_item:
-                            st.warning("Product name is required.")
+                    
+                    submitted = st.form_submit_button("✅ Add to Sheet")
+                    
+                    if submitted:
+                        if not new_item.strip():
+                            st.warning("❌ Product name is required.")
+                        elif new_item in df["Item Name"].values:
+                            st.error(f"❌ A product with the name '{new_item}' already exists!")
                         else:
+                            # Convert image URL if provided
                             converted_image_url = convert_google_drive_url_for_storage(new_image) if new_image else ""
+                            
+                            # Create new row
                             new_row = {
-                                "Item Name": new_item,
+                                "Item Name": new_item.strip(),
                                 "Selling Price": new_price,
                                 "Sales Description": new_desc,
                                 "CF.Colors": new_color,
                                 "CF.Dimensions": new_dim,
+                                "CF.Warranty": new_warranty,
                                 "CF.image url": converted_image_url
                             }
+                            
+                            # Append to DataFrame
                             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-                            set_with_dataframe(sheet, df)
-                            st.cache_data.clear()
-                            st.success(f"✅ '{new_item}' added successfully!")
-                            st.rerun()
+                            
+                            # Save to Google Sheet
+                            try:
+                                set_with_dataframe(sheet, df)
+                                st.cache_data.clear()
+                                st.success(f"✅ '{new_item}' added successfully!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Failed to save to sheet: {str(e)}")
+            
             with image_col:
-                st.markdown("Image Preview:")
-                display_admin_preview(new_image if 'new_image' in locals() else "")
-                st.markdown("Supported formats:")
-                st.markdown("• Direct image URLs (jpg, png, etc.)")
-                st.markdown("• Google Drive share links")
-                st.markdown("Example Google Drive URL:")
+                st.markdown("### Image Preview:")
+                if new_image:
+                    display_admin_preview(new_image, "Preview of entered image URL")
+                else:
+                    st.info("📷 No image URL provided")
+                st.markdown("---")
+                st.markdown("### Supported Formats:")
+                st.markdown("• Direct image URLs (.jpg, .png, etc.)")
+                st.markdown("• Google Drive shared links")
+                st.markdown("**Example:**")
                 st.code("https://drive.google.com/file/d/1vN8l2FX.../view", language="text")
+        
+
         with tab2:
             st.subheader("Delete Product")
             with st.form("delete_product_form"):
-                product_to_delete = st.selectbox("Select product to delete", df["Item Name"].tolist())
-                st.warning("⚠ This will permanently delete the product from the spreadsheet!")
+                product_to_delete = st.selectbox("Select product to delete", df["Item Name"].tolist(), key="delete_select")
+                
+                if product_to_delete:
+                    row = df[df["Item Name"] == product_to_delete].iloc[0]
+                    st.markdown("### Current Product Details:")
+                    st.write(f"**Name:** {row['Item Name']}")
+                    st.write(f"**Price:** ${row['Selling Price']:.2f}")
+                    if row.get("Sales Description") and pd.notna(row["Sales Description"]):
+                        st.write(f"**Description:** {row['Sales Description']}")
+                    if row.get("CF.Colors") and pd.notna(row["CF.Colors"]):
+                        st.write(f"**Color:** {row['CF.Colors']}")
+                    if row.get("CF.Dimensions") and pd.notna(row["CF.Dimensions"]):
+                        st.write(f"**Dimensions:** {row['CF.Dimensions']}")
+                    if row.get("CF.Warranty") and pd.notna(row["CF.Warranty"]):
+                        st.write(f"**Warranty:** {row['CF.Warranty']}")
+                    if row.get("CF.image url") and pd.notna(row["CF.image url"]):
+                        with st.expander("🖼 View Image"):
+                            display_admin_preview(row["CF.image url"], "Current product image")
+                
+                st.warning("⚠ This will permanently delete the product from the spreadsheet.")
                 confirm_delete = st.checkbox("I confirm I want to delete this product")
+                
                 submitted = st.form_submit_button("❌ Delete Product")
-                if submitted and confirm_delete:
-                    matching_rows = df[df["Item Name"] == product_to_delete]
-                    if len(matching_rows) == 0:
-                        st.error(f"Product '{product_to_delete}' not found.")
-                    else:
-                        row_index = matching_rows.index[0] + 2
-                        sheet.delete_rows(int(row_index))
-                        st.cache_data.clear()
-                        st.success(f"❌ '{product_to_delete}' deleted successfully!")
-                        st.rerun()
+                
+                if submitted:
                     if not confirm_delete:
-                        st.error("Please check the confirmation box to delete")
+                        st.error("⚠ Please check the confirmation box to proceed.")
+                    else:
+                        matching_rows = df[df["Item Name"] == product_to_delete]
+                        if len(matching_rows) == 0:
+                            st.error("❌ Product not found.")
+                        else:
+                            row_index = matching_rows.index[0] + 2  # +2 because df index starts at 0, sheet starts at 1 + header row
+                            try:
+                                sheet.delete_rows(int(row_index))
+                                st.cache_data.clear()
+                                st.success(f"✅ '{product_to_delete}' deleted successfully!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Failed to delete row: {str(e)}")
+        
+
         with tab3:
             st.subheader("Update Product")
             form_col, image_col = st.columns([2, 1])
+            
             with form_col:
-                selected_product = st.selectbox("Select product to update", df["Item Name"].tolist(), key="update_product_select")
+                selected_product = st.selectbox(
+                    "Select product to update",
+                    df["Item Name"].tolist(),
+                    key="update_product_select"
+                )
                 existing_row = df[df["Item Name"] == selected_product].iloc[0] if selected_product else None
+                
                 with st.form("update_product_form"):
                     if existing_row is not None:
                         updated_name = st.text_input("Update Product Name", value=selected_product)
-                        updated_price = st.number_input("Update Price", value=float(existing_row["Selling Price"]))
+                        updated_price = st.number_input("Update Price", value=float(existing_row["Selling Price"]), min_value=0.0)
                         updated_desc = st.text_area("Update Description", value=existing_row.get("Sales Description", ""))
                         updated_color = st.text_input("Update Color", value=existing_row.get("CF.Colors", ""))
                         updated_dim = st.text_input("Update Dimensions", value=existing_row.get("CF.Dimensions", ""))
-                        updated_image = st.text_input("Update Image URL", value=existing_row.get("CF.image url", ""), help="Paste Google Drive link or direct image URL")
+                        updated_warranty = st.text_input("Update Warranty", value=existing_row.get("CF.Warranty", ""), help="e.g., Lifetime warranty")
+                        updated_image = st.text_input(
+                            "Update Image URL",
+                            value=existing_row.get("CF.image url", ""),
+                            help="Paste Google Drive link or direct image URL"
+                        )
                     else:
                         updated_name = st.text_input("Update Product Name", value="")
-                        updated_price = st.number_input("Update Price", value=0.0)
+                        updated_price = st.number_input("Update Price", value=0.0, min_value=0.0)
                         updated_desc = st.text_area("Update Description", value="")
                         updated_color = st.text_input("Update Color", value="")
                         updated_dim = st.text_input("Update Dimensions", value="")
-                        updated_image = st.text_input("Update Image URL", value="", help="Paste Google Drive link or direct image URL")
-                    if st.form_submit_button("✅ Apply Update"):
-                        if selected_product and updated_name.strip():
-                            if updated_name != selected_product and updated_name in df["Item Name"].values:
-                                st.error(f"❌ Product name '{updated_name}' already exists!")
-                            else:
-                                converted_image_url = convert_google_drive_url_for_storage(updated_image) if updated_image else ""
-                                df.loc[df["Item Name"] == selected_product,
-                                       ["Item Name", "Selling Price", "Sales Description", "CF.Colors", "CF.Dimensions", "CF.image url"]] = \
-                                    [updated_name.strip(), updated_price, updated_desc, updated_color, updated_dim, converted_image_url]
+                        updated_warranty = st.text_input("Update Warranty", value="", help="e.g., 5 years")
+                        updated_image = st.text_input("Update Image URL", value="", help="Image URL or Google Drive link")
+                    
+                    submitted = st.form_submit_button("✅ Apply Update")
+                    
+                    if submitted:
+                        if not updated_name.strip():
+                            st.error("❌ Product name cannot be empty!")
+                        elif selected_product and updated_name.strip() != selected_product and updated_name.strip() in df["Item Name"].values:
+                            st.error(f"❌ Product name '{updated_name}' already exists!")
+                        else:
+                            converted_image_url = convert_google_drive_url_for_storage(updated_image) if updated_image else ""
+                            
+                            # Update the DataFrame
+                            df.loc[df["Item Name"] == selected_product, [
+                                "Item Name",
+                                "Selling Price",
+                                "Sales Description",
+                                "CF.Colors",
+                                "CF.Dimensions",
+                                "CF.Warranty",
+                                "CF.image url"
+                            ]] = [
+                                updated_name.strip(),
+                                updated_price,
+                                updated_desc,
+                                updated_color,
+                                updated_dim,
+                                updated_warranty,
+                                converted_image_url
+                            ]
+                            
+                            try:
                                 set_with_dataframe(sheet, df)
                                 st.cache_data.clear()
                                 st.success(f"✅ '{selected_product}' updated successfully!")
                                 st.rerun()
-                        elif not updated_name.strip():
-                            st.error("❌ Product name cannot be empty!")
-                        else:
-                            st.error("Please select a product to update")
+                            except Exception as e:
+                                st.error(f"❌ Failed to save update: {str(e)}")
+            
+            # Right column: Preview current & updated data
             with image_col:
-                st.markdown("Current Product Data:")
+                st.markdown("### Current Product Data:")
                 if selected_product and existing_row is not None:
-                    st.write(f"Product: {selected_product}")
-                    st.write(f"Current Price: ${existing_row['Selling Price']:.2f}")
-                    if existing_row.get("Sales Description", ""):
-                        st.write(f"Description: {existing_row['Sales Description']}")
-                    if existing_row.get("CF.Colors", ""):
-                        st.write(f"Color: {existing_row['CF.Colors']}")
-                    if existing_row.get("CF.Dimensions", ""):
-                        st.write(f"Dimensions: {existing_row['CF.Dimensions']}")
+                    st.write(f"**Product:** {selected_product}")
+                    st.write(f"**Price:** ${existing_row['Selling Price']:.2f}")
+                    if existing_row.get("Sales Description") and pd.notna(existing_row["Sales Description"]):
+                        st.write(f"**Description:** {existing_row['Sales Description']}")
+                    if existing_row.get("CF.Colors") and pd.notna(existing_row["CF.Colors"]):
+                        st.write(f"**Color:** {existing_row['CF.Colors']}")
+                    if existing_row.get("CF.Dimensions") and pd.notna(existing_row["CF.Dimensions"]):
+                        st.write(f"**Dimensions:** {existing_row['CF.Dimensions']}")
+                    if existing_row.get("CF.Warranty") and pd.notna(existing_row["CF.Warranty"]):
+                        st.write(f"**Warranty:** {existing_row['CF.Warranty']}")
                     st.markdown("---")
-                    st.markdown("Current Image:")
+                    st.markdown("**Current Image:**")
                     current_image = existing_row.get("CF.image url", "")
-                    if current_image:
+                    if current_image and pd.notna(current_image):
                         display_admin_preview(current_image, f"Current image for {selected_product}")
                     else:
-                        st.info("📷 No image set for this product")
+                        st.info("📷 No image set")
+                    
+                    st.markdown("---")
+                    st.markdown("**Updated Image Preview:**")
+                    if updated_image:
+                        display_admin_preview(updated_image, "Updated Image Preview")
+                    else:
+                        st.info("📷 Enter a URL to preview new image")
                 else:
-                    st.info("👆 Select a product above to see its current data")
-                st.markdown("Updated Image Preview:")
-                if selected_product and 'updated_image' in locals() and updated_image:
-                    display_admin_preview(updated_image, "Updated Image Preview")
-                elif selected_product:
-                    st.info("📷 Enter a new image URL above to see preview")
+                    st.info("👆 Select a product to view its data")
+        
         st.stop()
 
+    # ========== QUOTATION CREATION ==========
     elif st.session_state.admin_choice == "quotation":
         st.header("📋 Admin - Create Quotation")
         if st.session_state.get('form_submitted', False):
@@ -653,7 +746,6 @@ if st.session_state.role == "admin":
             if not st.session_state.get('form_submitted', False):
                 st.warning("⚠ Please fill in all company and contact details.")
                 st.stop()
-
 # ========== Regular Buyer Panel ==========
 elif st.session_state.role == "buyer":
     st.header("🛍 Buy Products & Get Quotation")
@@ -1303,3 +1395,4 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
+
