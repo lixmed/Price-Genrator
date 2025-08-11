@@ -97,8 +97,7 @@ def get_gsheet_connection():
 
         # Open the spreadsheet by ID
         sh = gc.open_by_key(spreadsheet_id)
-
-        # ✅ افتح الورقة اللي اسمها "Chairs" بالضبط
+        
         worksheet = sh.worksheet("Chairs")  # ← هنا التغيير المهم
 
         return worksheet  # هيرجع الورقة المطلوبة
@@ -782,11 +781,13 @@ def download_image_for_pdf(url, max_size=(300, 300)):
         return None
 
 @st.cache_data
+@st.cache_data
 def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png"):
     def build_pdf(data, total, company_details, hdr_path, ftr_path):
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
         pdf_path = tmp.name
         tmp.close()
+
         doc = SimpleDocTemplate(
             pdf_path,
             pagesize=A3,
@@ -799,6 +800,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         elems = []
         styles['Normal'].fontSize = 14
         styles['Normal'].leading = 20
+
         aligned_style = ParagraphStyle(
             name='LeftAligned',
             parent=styles['Normal'],
@@ -818,6 +820,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 img_w = doc.width + doc.leftMargin + doc.rightMargin
                 img_h = img_w * (h / w)
                 canvas.drawImage(hdr_path, 0, A3[1] - img_h + 10, width=img_w, height=img_h)
+
             # Footer
             footer_height = 0
             if ftr_path and os.path.exists(ftr_path):
@@ -827,13 +830,14 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 img_h2 = img_w2 * (h2 / w2)
                 canvas.drawImage(ftr_path, 0, 1, width=img_w2, height=img_h2)
                 footer_height = img_h2
+
             # Page number
             canvas.setFont('Helvetica', 10)
             page_num = canvas.getPageNumber()
             canvas.drawRightString(doc.width + doc.leftMargin, footer_height + 10, str(page_num))
             canvas.restoreState()
 
-        # Company & Contact Details
+        # === Company & Contact Details ===
         detail_lines = [
             "<para align='left'>",
             "<font size=14>",
@@ -858,7 +862,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         elems.append(Spacer(1, 40))
         elems.append(Paragraph(details, aligned_style))
 
-        # Terms & Conditions
+        # === Terms & Conditions ===
         terms_conditions = f"""
         <para align="left">
         <font size=14>
@@ -873,7 +877,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         """
         elems.append(Paragraph(terms_conditions, aligned_style))
 
-        # Payment Info
+        # === Payment Info ===
         payment_info = f"""
         <para align="left">
         <font size=14>
@@ -891,7 +895,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         elems.append(Spacer(1, 90))
         elems.append(PageBreak())
 
-        # Table styles
+        # === Table Setup ===
         desc_style = ParagraphStyle(name='Description', fontSize=12, leading=16, alignment=TA_CENTER)
         styleN = ParagraphStyle(name='Normal', fontSize=12, leading=12, alignment=TA_CENTER)
 
@@ -905,27 +909,26 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             return "" if is_empty(val) else f"{float(val):.2f}"
 
         data_from_hash = st.session_state.get('pdf_data', [])
-        
-        # Check if any item has discount
         has_discounts = any(float(item.get('Discount %', 0)) > 0 for item in data_from_hash)
 
-        # Build headers
-        base_headers = ["Ser.", "Product", "Image", "SKU", "Details", "QTY", "Unit Price", "Line Total"]
+        # === Define Headers ===
+        base_headers = ["Ser.", "Product", "Image", "SKU", "Details", "QTY", "Price Before Discount", "Unit Price", "Line Total"]
         if has_discounts:
-            base_headers.insert(7, "Discount")
+            base_headers.insert(8, "Discount")  # After Unit Price
 
         product_table_data = [base_headers]
+
         temp_files = []
 
         for idx, r in enumerate(data_from_hash, start=1):
             img_element = "No Image"
             if r.get("Image"):
                 download_url = convert_google_drive_url_for_storage(r["Image"])
-                temp_img_path = download_image_for_pdf(download_url, max_size=(300, 300))
+                temp_img_path = download_image_for_pdf(download_url, max_size=(180, 180))  # Smaller image
                 if temp_img_path:
                     try:
                         img = RLImage(temp_img_path)
-                        img._restrictSize(190, 180)
+                        img._restrictSize(180, 180)
                         img.hAlign = 'CENTER'
                         img.vAlign = 'MIDDLE'
                         img_element = img
@@ -940,6 +943,9 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             )
             details_para = Paragraph(details_text, desc_style)
 
+            unit_price = float(r.get('Price per item', 0))
+            price_before_discount = unit_price * 1.25  # Reverse 20% discount
+
             row = [
                 str(idx),
                 Paragraph(safe_str(r.get('Item')), styleN),
@@ -947,69 +953,62 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 Paragraph(safe_str(r.get('SKU')).upper(), styleN),
                 details_para,
                 Paragraph(safe_str(r.get('Quantity')), styleN),
-                Paragraph(safe_float(r.get('Price per item')), styleN),
+                Paragraph(f"{price_before_discount:.2f}", styleN),
+                Paragraph(f"{unit_price:.2f}", styleN),
             ]
 
             if has_discounts:
                 discount_val = safe_float(r.get('Discount %'))
-                row.append(Paragraph(f"{discount_val}%", styleN))
+                row.insert(8, Paragraph(f"{discount_val}%", styleN))
 
             row.append(Paragraph(safe_float(r.get('Total price')), styleN))
             product_table_data.append(row)
 
-        # Column widths
-        base_col_widths = [30, 100, 150, 60, 170, 50, 70, 70]  # Without discount
+        # === Column Widths (Total width = doc.width ≈ 792 - 80 = 712) ===
+        col_widths = [30, 100, 130, 55, 150, 45, 70, 65, 65]  # Base: no discount
         if has_discounts:
-            col_widths = base_col_widths.copy()
-            col_widths.insert(7, 65)  # Insert "Discount" column with width 65
-        else:
-            col_widths = base_col_widths
+            col_widths.insert(8, 60)  # Insert "Discount" column width
 
-        product_table = Table(product_table_data, colWidths=col_widths)
-        product_table.setStyle(TableStyle([
+        total_table_width = sum(col_widths)
+        table = Table(product_table_data, colWidths=col_widths, repeatRows=1)
+
+        table.setStyle(TableStyle([
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
             ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 1), (-1, -1), 12),
+            ('FONTSIZE', (0, 1), (-1, -1), 11),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('LEADING', (0, 0), (-1, -1), 12),
             ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('LEFTPADDING', (0, 0), (-1, -1), 6),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
             ('TOPPADDING', (0, 0), (-1, -1), 6),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ]))
-        elems.append(product_table)
 
-        # Summary section
-        # subtotal = sum(float(r.get('Price per item', 0)) * float(r.get('Quantity', 1)) for r in data_from_hash)
-        # total_after_discount = total
-        # discount = subtotal - total_after_discount
-        # vat = total_after_discount * 0.15
-        # grand_total = total_after_discount + vat
+        elems.append(table)
 
-
+        # === Summary Table (Must Match Item Table Width) ===
         subtotal = sum(float(r.get('Price per item', 0)) * float(r.get('Quantity', 1)) for r in data_from_hash)
         total_after_discount = total
-        discount = subtotal - total_after_discount
+        discount_amount = subtotal - total_after_discount
         vat = total_after_discount * 0.15
         grand_total = total_after_discount + vat
-        summary_data = [
-            ["Total", f"{subtotal:.2f} EGP"]
-        ]
-        if discount > 0:
-            summary_data.append(["Special Discount", f"- {discount:.2f} EGP"])
 
+        summary_data = [["Total", f"{subtotal:.2f} EGP"]]
+        if discount_amount > 0:
+            summary_data.append(["Special Discount", f"- {discount_amount:.2f} EGP"])
         summary_data.append(["Total After Discount", f"{total_after_discount:.2f} EGP"])
         summary_data.append(["VAT (15%)", f"{vat:.2f} EGP"])
         summary_data.append(["Grand Total", f"{grand_total:.2f} EGP"])
 
-        col_widths = [615, 150] if has_discounts > 0 else [540, 150]
-        summary_table = Table(summary_data, colWidths=col_widths)
+        # Match summary table width to item table
+        summary_col_widths = [total_table_width - 150, 150]
 
+        summary_table = Table(summary_data, colWidths=summary_col_widths)
         summary_table.setStyle(TableStyle([
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
@@ -1017,24 +1016,27 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             ('FONTSIZE', (0, 0), (-1, -1), 12),
             ('GRID', (0, 0), (-1, -1), 1.0, colors.black),
             ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
-            ('TEXTCOLOR', (1, 1), (1, 1), colors.red) if discount > 0 else ('TEXTCOLOR', (1, 1), (1, 1), colors.black),
+            ('TEXTCOLOR', (1, 1), (1, 1), colors.red) if discount_amount > 0 else ('TEXTCOLOR', (1, 1), (1, 1), colors.black),
         ]))
+
+        elems.append(Spacer(1, 10))
         elems.append(summary_table)
 
-
+        # Build PDF
         try:
             doc.build(elems, onFirstPage=header_footer, onLaterPages=header_footer)
         finally:
             for temp_file in temp_files:
                 try:
                     os.unlink(temp_file)
-                except:
-                    pass
+                except Exception as e:
+                    print(f"Failed to delete temp image: {e}")
+
         return pdf_path
 
     st.session_state.pdf_data = st.session_state.get('pdf_data', [])
     return build_pdf([], total, company_details, hdr_path, ftr_path)
-
+    
 # ========== Generate PDF & Save to History ==========
 if st.button("📅 Generate PDF Quotation") and output_data:
     with st.spinner("Generating PDF and saving to history..."):
@@ -1065,6 +1067,7 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 file_name=new_record["pdf_filename"],
                 mime="application/pdf"
             )
+
 
 
 
