@@ -1178,6 +1178,55 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
     return build_pdf(st.session_state.pdf_data, total, company_details, hdr_path, ftr_path)
     
 # ========== Generate PDF & Save to History ==========
+
+
+def load_user_history_from_sheet(user_email, sheet):
+    """Load user's quotation history from Google Sheet with fallbacks"""
+    if sheet is None:
+        return []
+    try:
+        df = get_as_dataframe(sheet)
+        df.dropna(how='all', inplace=True)  # Remove completely empty rows
+        user_rows = df[df["User Email"].str.lower() == user_email.lower()]
+        history = []
+        import json
+        for _, row in user_rows.iterrows():
+            try:
+                items = json.loads(row["Items JSON"])
+                company_details_raw = row.get("Company Details JSON", "{}")
+                try:
+                    company_details = json.loads(company_details_raw) if pd.notna(company_details_raw) and company_details_raw.strip() != "" else {}
+                except:
+                    company_details = {}
+
+                # 🔐 Generate fallback hash if not present
+                stored_hash = str(row.get("Quotation Hash", "")).strip()
+                if not stored_hash or stored_hash.lower() == "nan":
+                    # Create deterministic fallback hash
+                    fallback_data = f"{row['Company Name']}{row['Timestamp']}{row['Total']}"
+                    stored_hash = hashlib.md5(fallback_data.encode()).hexdigest()
+
+                history.append({
+                    "user_email": row["User Email"],
+                    "timestamp": row["Timestamp"],
+                    "company_name": row["Company Name"],
+                    "contact_person": row["Contact Person"],
+                    "total": float(row["Total"]),
+                    "items": items,
+                    "pdf_filename": row["PDF Filename"],
+                    "hash": stored_hash,  # Always ensure this exists
+                    "company_details": company_details
+                })
+            except Exception as e:
+                st.warning(f"⚠️ Skipping malformed row (Company: {row.get('Company Name', 'Unknown')}): {e}")
+                continue
+        return history
+    except Exception as e:
+        st.error(f"❌ Failed to load history: {e}")
+        return []
+
+
+
 if st.button("📅 Generate PDF Quotation") and output_data:
     with st.spinner("Generating PDF and saving to cloud history..."):
         st.session_state.pdf_data = output_data
@@ -1237,6 +1286,7 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
+
 
 
 
