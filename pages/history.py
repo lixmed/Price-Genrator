@@ -15,6 +15,8 @@ import os
 import re
 from PIL import Image as PILImage
 import time
+import gspread
+from gspread_dataframe import get_as_dataframe
 
 # ========== Page Config ==========
 st.set_page_config(page_title="Quotation History", page_icon="📜", layout="wide")
@@ -27,6 +29,88 @@ if "logged_in" not in st.session_state or not st.session_state.logged_in:
 # ========== Initialize Session State (if not exists) ==========
 if 'history' not in st.session_state:
     st.session_state.history = []
+
+# ========== Google Sheets Connection ==========
+@st.cache_resource
+def get_history_sheet():
+    """Connect to Google Sheet by ID and return worksheet"""
+    try:
+        creds_dict = st.secrets["gcp_service_account"]
+        gc = gspread.service_account_from_dict(creds_dict)
+        sh = gc.open_by_key("1RxKb_qj5JgXPy8bz9Fur1Jj6178fEXrP5d0W6BqwjDw")
+        return sh.sheet1
+    except Exception as e:
+        st.error(f"❌ Cannot connect to history sheet: {e}")
+        return None
+
+def load_user_history_from_sheet(user_email, sheet):
+    """Load user's quotation history from Google Sheet with fallbacks"""
+    if sheet is None:
+        return []
+    try:
+        df = get_as_dataframe(sheet)
+        df.dropna(how='all', inplace=True)  # Remove completely empty rows
+        user_rows = df[df["User Email"].str.lower() == user_email.lower()]
+        history = []
+        import json
+        for _, row in user_rows.iterrows():
+            try:
+                items = json.loads(row["Items JSON"])
+                company_details_raw = row.get("Company Details JSON", "{}")
+                try:
+                    company_details = json.loads(company_details_raw) if pd.notna(company_details_raw) and company_details_raw.strip() != "" else {}
+                except:
+                    company_details = {}
+
+                # 🔐 Generate fallback hash if not present
+                stored_hash = str(row.get("Quotation Hash", "")).strip()
+                if not stored_hash or stored_hash.lower() == "nan":
+                    # Create deterministic fallback hash
+                    fallback_data = f"{row['Company Name']}{row['Timestamp']}{row['Total']}"
+                    stored_hash = hashlib.md5(fallback_data.encode()).hexdigest()
+
+                history.append({
+                    "user_email": row["User Email"],
+                    "timestamp": row["Timestamp"],
+                    "company_name": row["Company Name"],
+                    "contact_person": row["Contact Person"],
+                    "total": float(row["Total"]),
+                    "items": items,
+                    "pdf_filename": row["PDF Filename"],
+                    "hash": stored_hash,  # Always ensure this exists
+                    "company_details": company_details
+                })
+            except Exception as e:
+                st.warning(f"⚠️ Skipping malformed row (Company: {row.get('Company Name', 'Unknown')}): {e}")
+                continue
+        return history
+    except Exception as e:
+        st.error(f"❌ Failed to load history: {e}")
+        return []
+def save_quotation_to_sheet(quote, sheet):
+    """
+    Save a quotation record to Google Sheet
+    quote: dict (same structure as st.session_state.history item)
+    sheet: gspread worksheet object
+    """
+    import json
+    row = [
+        quote["user_email"],
+        quote["timestamp"],
+        quote["company_name"],
+        quote["contact_person"],
+        f"{quote['total']:.2f}",
+        json.dumps(quote["items"]),
+        json.dumps(quote.get("company_details", {})),
+        quote["pdf_filename"],
+        quote["hash"]
+    ]
+    try:
+        sheet.append_row(row)
+        return True
+    except Exception as e:
+        st.error(f"❌ Failed to save to Google Sheet: {e}")
+        return False
 
 # ========== Google Drive URL Conversion ==========
 def convert_google_drive_url_for_storage(url):
@@ -249,19 +333,15 @@ def generate_pdf_from_data(items, total, company_details, hdr_path="q2.png", ftr
         vat = total_after_discount * 0.15
         grand_total = total_after_discount + vat
 
-        # Build summary conditionally
         summary_data = [
             ["Total", f"{subtotal:.2f} EGP"]
         ]
-
         if discount_amount > 0:
             summary_data.append(["Special Discount", f"- {discount_amount:.2f} EGP"])
-
         summary_data.append(["Total After Discount", f"{total_after_discount:.2f} EGP"])
         summary_data.append(["VAT (15%)", f"{vat:.2f} EGP"])
         summary_data.append(["Grand Total", f"{grand_total:.2f} EGP"])
 
-        # Adjust column width based on discount
         col_widths = [615, 150] if discount_amount > 0 else [540, 150]
         summary_table = Table(summary_data, colWidths=col_widths)
         summary_table.setStyle(TableStyle([
@@ -275,7 +355,6 @@ def generate_pdf_from_data(items, total, company_details, hdr_path="q2.png", ftr
         ]))
         elems.append(summary_table)
 
-        # Build PDF
         try:
             doc.build(elems, onFirstPage=header_footer, onLaterPages=header_footer)
         finally:
@@ -288,7 +367,6 @@ def generate_pdf_from_data(items, total, company_details, hdr_path="q2.png", ftr
 
     return build_pdf(items, total, company_details, hdr_path, ftr_path)
 
-
 # ========== Header ==========
 st.title("📜 Quotation History")
 st.markdown(f"**Welcome:** {st.session_state.user_email} ({st.session_state.role})")
@@ -296,7 +374,20 @@ st.markdown(f"**Welcome:** {st.session_state.user_email} ({st.session_state.role
 if st.button("⬅️ Back to Quotation Builder"):
     st.switch_page("app.py")
 
-# ========== Check for History ==========
+# ========== Refresh Button ==========
+st.markdown("---")
+if st.button("🔄 Refresh History from Cloud"):
+    history_sheet = get_history_sheet()
+    if history_sheet:
+        st.session_state.history = load_user_history_from_sheet(st.session_state.user_email, history_sheet)
+        st.success("✅ History refreshed from Google Sheet!")
+    else:
+        st.error("Failed to connect to Google Sheets.")
+    st.rerun()
+
+st.markdown("---")
+
+# ========== Display History ==========
 if not st.session_state.history:
     st.info("📭 No quotations created yet. Start building one!")
 else:
@@ -310,7 +401,8 @@ else:
 
             # Regenerate PDF Button
             with col1:
-                if st.button(f"📄 Regenerate PDF", key=f"regen_{idx}_{quote['hash']}"):
+                quote_hash = quote.get("hash", f"unknown_{idx}")
+                if st.button(f"📄 Regenerate PDF", key=f"regen_{idx}_{quote_hash}"):
                     with st.spinner("Rebuilding PDF..."):
                         try:
                             temp_details = quote.get("company_details") or st.session_state.company_details
@@ -331,20 +423,46 @@ else:
             with col2:
                 if st.button("🗑️ Delete", key=f"del_{idx}_{quote['hash']}"):
                     if st.session_state.get(f"confirm_delete_{idx}"):
-                        # Confirm and delete
-                        st.session_state.history.pop(len(st.session_state.history) - 1 - idx)
-                        st.success("🗑️ Quotation deleted!")
-                        time.sleep(1)
-                        st.rerun()
+                        # Confirm and delete from both session and Google Sheet
+                        try:
+                            # 🔍 Get the history sheet
+                            history_sheet = get_history_sheet()
+                            if history_sheet is None:
+                                st.error("❌ Cannot connect to Google Sheet.")
+                            else:
+                                # Load all data from sheet
+                                df = get_as_dataframe(history_sheet)
+                                df.dropna(how='all', inplace=True)
+
+                                # Find row where Quotation Hash matches
+                                matching_rows = df[df["Quotation Hash"] == quote["hash"]]
+
+                                if len(matching_rows) == 0:
+                                    st.warning("⚠️ This quotation was not found in the Google Sheet.")
+                                else:
+                                    # Get the first matching row index (Google Sheets is 1-indexed, +2 for header and 0-index)
+                                    row_index = matching_rows.index[0] + 2  # +2 because: 0-index + 1 header row
+                                    history_sheet.delete_rows(int(row_index))
+                                    st.success("🗑️ Quotation deleted from Google Sheet!")
+
+                            # ✅ Remove from session state
+                            st.session_state.history.pop(len(st.session_state.history) - 1 - idx)
+                            st.success("🗑️ Quotation deleted from session!")
+
+                            # 🔄 Optional: Refresh history to stay in sync
+                            time.sleep(1)
+                            st.rerun()
+
+                        except Exception as e:
+                            st.error(f"❌ Failed to delete from Google Sheet: {e}")
                     else:
                         st.session_state[f"confirm_delete_{idx}"] = True
                         st.warning("⚠️ Press 'Delete' again to confirm.")
                         st.rerun()
-
             # Edit Button
             with col3:
                 if st.button("✏️ Edit Quotation", key=f"edit_{idx}_{quote['hash']}"):
-                    # Restore quotation into session state
+                    # Restore into session state
                     st.session_state.form_submitted = True
                     st.session_state.company_details = quote.get("company_details") or {
                         "company_name": quote["company_name"],
