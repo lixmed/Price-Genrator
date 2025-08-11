@@ -19,14 +19,6 @@ from reportlab.platypus import KeepInFrame
 st.set_page_config(page_title="Quotation Builder", page_icon="🪑", layout="wide")
 
 # ========== User Credentials ==========
-USERS = {
-    "admin1@example.com": {"username": "admin1", "password": "admin123", "role": "admin"},
-    "admin2@example.com": {"username": "admin2", "password": "admin456", "role": "admin"},
-    "user1@example.com":  {"username": "user1",  "password": "user123",  "role": "buyer"},
-    "user2@example.com":  {"username": "user2",  "password": "user456",  "role": "buyer"},
-}
-
-# ========== Session State Initialization ==========
 def init_session_state():
     """Initialize session state variables"""
     defaults = {
@@ -51,6 +43,118 @@ def init_session_state():
 
 init_session_state()
 
+
+def load_user_history(user_email, sheet):
+    """Load user's quotation history from Google Sheet"""
+    if sheet is None:
+        return []
+    try:
+        df = get_as_dataframe(sheet)
+        df.dropna(how='all', inplace=True)  # Remove empty rows
+        # Filter by user email
+        user_rows = df[df["User Email"].str.lower() == user_email.lower()]
+        history = []
+        import json
+        for _, row in user_rows.iterrows():
+            try:
+                items = json.loads(row["Items JSON"])
+                history.append({
+                    "user_email": row["User Email"],
+                    "timestamp": row["Timestamp"],
+                    "company_name": row["Company Name"],
+                    "contact_person": row["Contact Person"],
+                    "total": float(row["Total"]),
+                    "items": items,
+                    "pdf_filename": row["PDF Filename"],
+                    "hash": row["Quotation Hash"]
+                })
+            except Exception as e:
+                st.warning(f"⚠️ Skipping malformed row: {e}")
+                continue
+        return history
+    except Exception as e:
+        st.error(f"❌ Failed to load history: {e}")
+        return []
+
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def load_users_from_sheet():
+    try:
+        # Load service account credentials from Streamlit secrets
+        creds_dict = st.secrets["gcp_service_account"]
+        gc = gspread.service_account_from_dict(creds_dict)
+
+        # Open the user credentials spreadsheet by ID
+        sh = gc.open_by_key("1c2IZtKKszQBSVf_4VWjZNv6-h3O9IwDizCTBhnVd1JE")
+        worksheet = sh.sheet1  # Assumes user data is in the first sheet
+
+        # Use get_all_values() — works on all gspread versions
+        rows = worksheet.get_all_values()
+
+        if not rows:
+            st.error("❌ User sheet is empty.")
+            st.stop()
+
+        # First row = headers
+        headers = [h.strip() for h in rows[0]]
+        data = []
+
+        # Remaining rows = user data
+        for row in rows[1:]:
+            if len(row) < len(headers):
+                row += [""] * (len(headers) - len(row))  # Pad short rows
+            data.append(dict(zip(headers, row)))
+
+        # Build USERS dict
+        users = {}
+        for row in data:
+            email = str(row.get("Email", "")).strip().lower()
+            password = str(row.get("Password", "")).strip()
+            role = str(row.get("Role", "")).strip()
+
+            # Skip if required fields are missing
+            if not email or not password or not role:
+                st.warning(f"⚠️ Skipping incomplete user row: {row}")
+                continue
+
+            if "@" not in email:
+                st.warning(f"⚠️ Invalid email format: {email}")
+                continue
+
+            # Generate username from email (part before @)
+            username = email.split("@")[0]
+
+            users[email] = {
+                "username": username,
+                "password": password,
+                "role": role
+            }
+
+        if not users:
+            st.error("❌ No valid users found in the Google Sheet.")
+            st.stop()
+
+        return users
+
+    except Exception as e:
+        st.error(f"❌ Failed to load users from Google Sheet: {e}")
+        st.stop()
+
+USERS= load_users_from_sheet()
+
+
+
+
+@st.cache_resource
+def get_history_sheet():
+    """Connect to the Quotation History Google Sheet"""
+    try:
+        creds_dict = st.secrets["gcp_service_account"]
+        gc = gspread.service_account_from_dict(creds_dict)
+        sh = gc.open_by_key("1RxKb_qj5JgXPy8bz9Fur1Jj6178fEXrP5d0W6BqwjDw")
+        return sh.sheet1  
+    except Exception as e:
+        st.error(f"❌ Failed to connect to history sheet: {e}")
+        return None
 # ========== Google Drive URL Conversion ==========
 def convert_google_drive_url_for_display(url):
     """Convert Google Drive view URL to thumbnail URL."""
@@ -181,11 +285,51 @@ if not st.session_state.logged_in:
                 st.session_state.user_email = email
                 st.session_state.username = user["username"]
                 st.session_state.role = user["role"]
+
+                # 👉 Load quotation history from Google Sheet
+                try:
+                    # Connect to Google Sheets
+                    creds_dict = st.secrets["gcp_service_account"]
+                    gc = gspread.service_account_from_dict(creds_dict)
+                    # Open the history spreadsheet by ID
+                    sh = gc.open_by_key("1RxKb_qj5JgXPy8bz9Fur1Jj6178fEXrP5d0W6BqwjDw")
+                    worksheet = sh.sheet1  # Assumes history is in first sheet
+
+                    # Load all data into DataFrame
+                    df = get_as_dataframe(worksheet)
+                    df.dropna(how='all', inplace=True)  # Remove completely empty rows
+
+                    # Filter by user email (case-insensitive)
+                    user_records = df[df["User Email"].str.lower() == email.lower()]
+
+                    history = []
+                    import json
+                    for _, row in user_records.iterrows():
+                        try:
+                            items = json.loads(row["Items JSON"])
+                            history.append({
+                                "timestamp": row["Timestamp"],
+                                "company_name": row["Company Name"],
+                                "contact_person": row["Contact Person"],
+                                "total": float(row["Total"]),
+                                "items": items,
+                                "pdf_filename": row["PDF Filename"],
+                                "hash": row["Quotation Hash"]
+                            })
+                        except Exception as e:
+                            st.warning(f"⚠️ Skipping malformed row in history: {e}")
+                            continue
+
+                    # Save to session state
+                    st.session_state.history = history
+                except Exception as e:
+                    st.error(f"⚠️ Could not load history: {e}")
+                    st.session_state.history = []  # Fallback: empty history
+
                 st.rerun()
             else:
                 st.error("❌ Incorrect email or password.")
     st.stop()
-
 # ========== Logout & History Sidebar ==========
 st.sidebar.success(f"Logged in as: {st.session_state.user_email} ({st.session_state.role})")
 
@@ -726,7 +870,7 @@ if ((st.session_state.role == "buyer") or
     # 💥 HOOK: AI Discount Negotiator
     if not checkDiscount:
         overall_discount = st.number_input("🧮 Overall Quotation Discount (%)", min_value=0.0, max_value=100.0, step=0.1, value=0.0)
-        if overall_discount > 14.0:
+        if overall_discount > 15.0:
             if st.button("🚀 Request AI Approval for High Discount"):
                 with st.spinner("📡 Connecting to HQ AI Negotiator..."):
                     time.sleep(1.2)
@@ -740,7 +884,7 @@ if ((st.session_state.role == "buyer") or
                 st.balloons()
                 final_total = total_sum * (1 - 17.3 / 100)
             else:
-                st.warning("💡 Try clicking 'Request AI Approval' for discounts over 14%!")
+                st.warning("💡 Try clicking 'Request AI Approval' for discounts over 15%!")
         else:
             final_total = total_sum * (1 - overall_discount / 100)
 
@@ -755,6 +899,7 @@ if ((st.session_state.role == "buyer") or
     st.markdown(f"### 💰 Grand Total: {final_total:.2f} EGP")
     if output_data:
         st.dataframe(pd.DataFrame(output_data), use_container_width=True)
+
 
 # ========== PDF Generation Functions ==========
 
@@ -1034,34 +1179,65 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
     
 # ========== Generate PDF & Save to History ==========
 if st.button("📅 Generate PDF Quotation") and output_data:
-    with st.spinner("Generating PDF and saving to history..."):
+    with st.spinner("Generating PDF and saving to cloud history..."):
         st.session_state.pdf_data = output_data
         data_str = str(output_data) + str(final_total) + str(company_details)
         data_hash = hashlib.md5(data_str.encode()).hexdigest()
+        pdf_filename = f"{company_details['company_name']}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
         pdf_file = build_pdf_cached(data_hash, final_total, company_details)
 
-        # 👉 Save to history
-        from datetime import datetime
+        # 👉 Prepare record
         new_record = {
+            "user_email": st.session_state.user_email,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "company_name": company_details["company_name"],
             "contact_person": company_details["contact_person"],
-            "total": final_total,
+            "total": round(final_total, 2),
             "items": output_data.copy(),
-            "hash": data_hash,
-            "pdf_filename": f"{company_details['company_name']}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+            "pdf_filename": pdf_filename,
+            "quotation_hash": data_hash
         }
-        st.session_state.history.append(new_record)
-        st.success("✅ Quotation saved to history!")
 
+        # 👉 Save to session state
+        st.session_state.history.append(new_record)
+
+        # 👉 Save to Google Sheet
+        history_sheet = get_history_sheet()
+        if history_sheet:
+            try:
+                import json
+                row = [
+                    new_record["user_email"],
+                    new_record["timestamp"],
+                    new_record["company_name"],
+                    new_record["contact_person"],
+                    new_record["total"],
+                    json.dumps(new_record["items"]),
+                    new_record["pdf_filename"],
+                    new_record["quotation_hash"]
+                ]
+                history_sheet.append_row(row)
+                st.success("✅ Quotation saved to session and Google Sheet!")
+            except Exception as e:
+                st.warning(f"⚠️ Saved locally, but failed to save to Google Sheet: {e}")
+        else:
+            st.warning("⚠️ Could not connect to Google Sheet. Quotation saved locally only.")
+        history_sheet = get_history_sheet()
+        if history_sheet:
+            st.session_state.history = load_user_history_from_sheet(st.session_state.user_email, history_sheet)
+            st.success("✅ History refreshed from Google Sheet!")
+        else:
+            st.error("Failed to connect to Google Sheets.")
         # Offer download
         with open(pdf_file, "rb") as f:
             st.download_button(
                 label="⬇ Click to Download PDF",
                 data=f,
-                file_name=new_record["pdf_filename"],
-                mime="application/pdf"
+                file_name=pdf_filename,
+                mime="application/pdf",
+                key=f"download_pdf_{data_hash}"
             )
+
 
 
 
