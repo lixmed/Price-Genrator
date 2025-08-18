@@ -1158,6 +1158,14 @@ if ((st.session_state.role == "buyer") or
 
     if 'cart' not in st.session_state:
         st.session_state.cart = []
+    
+    # Initialize price edits session state if not exists
+    if 'price_edits' not in st.session_state:
+        st.session_state.price_edits = {}
+    
+    # Initialize discount edits session state if not exists
+    if 'discount_edits' not in st.session_state:
+        st.session_state.discount_edits = {}
 
     products = df['Item Name'].tolist()
     price_map = dict(zip(df['Item Name'], df['Selling Price']))
@@ -1191,26 +1199,60 @@ if ((st.session_state.role == "buyer") or
         if c9.button("X", key=f"clear_{idx}"):
             st.session_state.row_indices.remove(idx)
             st.session_state.selected_products.pop(prod_key, None)
+            # Clear price edits for this product
+            if prod in st.session_state.price_edits:
+                del st.session_state.price_edits[prod]
+            if prod in st.session_state.discount_edits:
+                del st.session_state.discount_edits[prod]
             st.rerun()
 
         if prod != "-- Select --":
-            unit_price = price_map[prod]
+            # Get original price from map
+            original_price = price_map[prod]
+            
+            # Initialize price edit for this product if not exists
+            if prod not in st.session_state.price_edits:
+                st.session_state.price_edits[prod] = original_price
+            
+            # Price per item (editable)
+            edited_price = c5.number_input(
+                "", 
+                min_value=0.0, 
+                value=float(st.session_state.price_edits[prod]), 
+                format="%.2f",
+                key=f"price_{idx}",
+                label_visibility="collapsed"
+            )
+            
+            # Update session state with new price
+            st.session_state.price_edits[prod] = edited_price
+            
+            # Quantity
             qty = c6.number_input("", min_value=1, value=1, step=1, key=f"qty_{idx}", label_visibility="collapsed")
+            
+            # Discount (editable)
             discount = c7.number_input("", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"disc_{idx}", label_visibility="collapsed")
             valid_discount = 0.0 if discount > 20 else discount
             if discount > 20:
                 st.warning(f"⚠ Max 20% discount allowed for '{prod}'. Ignoring discount.")
             if valid_discount > 0:
                 checkDiscount = True
-            basePrice += unit_price * qty
-            discounted_price = unit_price * (1 - valid_discount / 100)
+            
+            # Calculate with edited price
+            basePrice += edited_price * qty
+            discounted_price = edited_price * (1 - valid_discount / 100)
             line_total = discounted_price * qty
+            
+            # Display image
             image_url = image_map.get(prod, "")
             display_product_image(c4, prod, image_url)
-            c5.write(f"{unit_price:.2f} EGP")
+            
+            # Display totals
             c8.write(f"{line_total:.2f} EGP")
             c2.write(f"{SKU_map.get(prod, 'N/A')}")
             c3.write(f"{Warranty_map.get(prod, 'N/A')}")
+            
+            # Add to output data
             output_data.append({
                 "Item": prod,
                 "Description": desc_map.get(prod, ""),
@@ -1218,7 +1260,7 @@ if ((st.session_state.role == "buyer") or
                 "Dimensions": dim_map.get(prod, ""),
                 "Image": convert_google_drive_url_for_display(image_url) if image_url else "",
                 "Quantity": qty,
-                "Price per item": unit_price,
+                "Price per item": edited_price,  # Use edited price
                 "Discount %": valid_discount,
                 "Total price": line_total,
                 "SKU": SKU_map.get(prod, ""),
@@ -1226,7 +1268,7 @@ if ((st.session_state.role == "buyer") or
             })
             total_sum += line_total
         else:
-            for col in [c2, c3, c4, c5, c6]:
+            for col in [c2, c3, c4, c5, c6, c7, c8]:
                 col.write("—")
 
     if st.button("➕ Add Product"):
@@ -1268,7 +1310,6 @@ if ((st.session_state.role == "buyer") or
     st.markdown(f"### 💰 Grand Total: {final_total:.2f} EGP")
     if output_data:
         st.dataframe(pd.DataFrame(output_data), use_container_width=True)
-
 
 # ========== PDF Generation Functions ==========
 
@@ -1660,5 +1701,6 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
+
 
 
