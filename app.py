@@ -904,7 +904,7 @@ if st.session_state.role == "admin":
     # ========== Regular Buyer Panel ==========
     # ========== Regular Buyer Panel ==========
 elif st.session_state.role == "buyer":
-    st.header("🛍 BUUUUUUUUYYYYY")
+    st.header("🛍  Buy Products & Get Quotation")
     
     # ADD THIS CRITICAL SECTION - Entry point for new quotations
     if 'quotation_in_progress' not in st.session_state:
@@ -1660,4 +1660,5 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
+
 
