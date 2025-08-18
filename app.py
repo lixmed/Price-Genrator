@@ -1135,7 +1135,7 @@ elif st.session_state.role == "buyer":
             # REMOVE st.stop() - let users see the form!
                 if not st.session_state.get('form_submitted', False):
                     st.warning("⚠ Please fill in your company details to continue")
-            st.stop
+            # st.stop
 
 # ========== Quotation Display Section ==========
 if ((st.session_state.role == "buyer") or 
@@ -1701,6 +1701,7 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
+
 
 
 
