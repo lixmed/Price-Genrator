@@ -1702,6 +1702,180 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 key=f"download_pdf_{data_hash}"
             )
 
+# =============================
+# 🔗 ZOHO CRM INTEGRATION
+# Only save if ALL products match by SKU
+# No auto-create — strict matching only
+# =============================
+
+@st.cache_data(ttl=3600)
+def get_all_zoho_products(access_token):
+    """Fetch all products from Zoho CRM"""
+    url = f"{st.secrets['zoho']['crm_api_domain']}/crm/v6/Products"
+    headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
+    params = {"fields": "Product_Name,Product_Code"}
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        return response.json().get("data", [])
+    except Exception as e:
+        st.error(f"❌ Failed to fetch Zoho products: {e}")
+        return []
+
+def get_zoho_product_id(item_data, zoho_products):
+    """
+    Match product by SKU only.
+    Returns Zoho Product ID if found, None otherwise.
+    """
+    name = item_data["Item"]
+    sku = str(item_data.get("SKU", "")).strip()
+    if not sku or sku.lower() in ["", "nan", "n/a"]:
+        return None
+    for prod in zoho_products:
+        zoho_sku = str(prod.get("Product_Code", "")).strip()
+        if zoho_sku == sku:
+            return prod["id"]
+    return None
+
+def validate_products_before_save(items, zoho_products):
+    """
+    Check that every item has a matching SKU in Zoho.
+    Returns (is_valid, list_of_errors)
+    """
+    errors = []
+    for item in items:
+        name = item["Item"]
+        sku = str(item.get("SKU", "")).strip()
+
+        if not sku or sku.lower() in ["", "nan", "n/a"]:
+            errors.append(f"❌ '{name}' has no SKU set in the sheet")
+            continue
+
+        found = False
+        for zoho_prod in zoho_products:
+            zoho_sku = str(zoho_prod.get("Product_Code", "")).strip()
+            if zoho_sku == sku:
+                found = True
+                break
+
+        if not found:
+            errors.append(f"❌ Product '{name}' (SKU: {sku}) not found in Zoho CRM")
+    return len(errors) == 0, errors
+
+def save_quotation_to_zoho(company_details, items, total):
+    try:
+        access_token = get_zoho_access_token()
+        headers = {
+            "Authorization": f"Zoho-oauthtoken {access_token}",
+            "Content-Type": "application/json"
+        }
+
+        # Get Account ID
+        accounts = fetch_zoho_accounts()
+        account = next((acc for acc in accounts if acc["Account_Name"] == company_details["company_name"]), None)
+        if not account:
+            return {"success": False, "error": "Account not found in Zoho CRM"}
+        account_id = account["id"]
+
+        # Fetch all Zoho products
+        zoho_products = get_all_zoho_products(access_token)
+        if not zoho_products:
+            return {"success": False, "error": "Failed to fetch Zoho products. Cannot validate SKUs."}
+
+        # 🔍 Validate all products BEFORE proceeding
+        is_valid, validation_errors = validate_products_before_save(items, zoho_products)
+        if not is_valid:
+            error_msg = "Could not save quotation due to SKU mismatches:\n" + "\n".join(validation_errors)
+            return {"success": False, "error": error_msg}
+
+        # ✅ All products matched — now build line items
+        line_items = []
+        for item in items:
+            product_id = get_zoho_product_id(item, zoho_products)
+            if not product_id:
+                return {"success": False, "error": f"Internal error: No ID for product '{item['Item']}'"}
+
+            line_items.append({
+                "Product": {"id": product_id},
+                "Quantity": int(item["Quantity"]),
+                "List_Price": float(item["Price per item"]),
+                "Discount": f"{item['Discount %']}%",
+                "Total": float(item["Total price"])
+            })
+
+        # Parse dates
+        from datetime import datetime as dt
+        date_format = "%A, %B %d, %Y"
+        valid_until = dt.strptime(company_details["valid_till"], date_format).strftime("%Y-%m-%d")
+        date_of_quotation = dt.strptime(company_details["current_date"], date_format).strftime("%Y-%m-%d")
+
+        # Build payload
+        payload = {
+            "data": [
+                {
+                    "Subject": f"Quotation for {company_details['company_name']}",
+                    "Account_Name": {"id": account_id},
+                    "Contact_Name": company_details["contact_person"],
+                    "Quote_Stage": "Sent",
+                    "Valid_Until": valid_until,
+                    "Date_of_Quotation": date_of_quotation,
+                    "Currency": "EGP",
+                    "Exchange_Rate": 1.0,
+                    "Shipping_Street": company_details.get("address", ""),
+                    "Shipping_Country": "Egypt",
+                    "Shipping_City": "Cairo",
+                    "Terms_and_Conditions": (
+                        f"Warranty: {company_details['warranty']}\n"
+                        f"Down payment: {company_details['down_payment']}%\n"
+                        f"Delivery: {company_details['delivery']}\n"
+                        f"{company_details['vat_note']}\n"
+                        f"{company_details['shipping_note']}"
+                    ),
+                    "Description": (
+                        f"Bank: {company_details['bank']}\n"
+                        f"IBAN: {company_details['iban']}\n"
+                        f"Account Number: {company_details['account_number']}\n"
+                        f"Company: {company_details['company']}\n"
+                        f"Tax ID: {company_details['tax_id']}\n"
+                        f"Commercial Reg No: {company_details['reg_no']}"
+                    ),
+                    "Line_Items": line_items
+                }
+            ]
+        }
+
+        # Send to Zoho
+        url = f"{st.secrets['zoho']['crm_api_domain']}/crm/v6/Quotations"
+        response = requests.post(url, json=payload, headers=headers)
+        if response.status_code in [200, 201]:
+            record_id = response.json()["data"][0]["details"]["id"]
+            return {"success": True, "record_id": record_id}
+        else:
+            return {"success": False, "error": response.text}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+# =============================
+# 🔘 BUTTON: Save to Zoho CRM
+# Appears after PDF is generated
+# =============================
+
+# Only show after PDF is generated
+if output_data and 'pdf_data' in st.session_state:
+    st.markdown("---")
+    if st.button("☁️ Save This Quotation to Zoho CRM", key="save_to_zoho_btn"):
+        with st.spinner("Validating products and saving to Zoho..."):
+            result = save_quotation_to_zoho(
+                company_details=company_details,
+                items=output_data,
+                total=final_total
+            )
+            if result["success"]:
+                st.success(f"✅ Saved to Zoho CRM! Record ID: {result['record_id']}")
+            else:
+                st.error(f"❌ Failed to save: {result['error']}")
+
 
 
 
