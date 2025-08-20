@@ -36,6 +36,11 @@ def init_session_state():
         "pdf_data": [],  
         "cart": [],    
         "edit_mode": False,
+        "reset_in_progress": False,
+        "reset_step": None,
+        "reset_email": None,
+        "reset_token": None,
+        "reset_token_expiry": None,
     }
     for key, default_value in defaults.items():
         if key not in st.session_state:
@@ -105,6 +110,94 @@ def fetch_zoho_accounts():
         st.error(f"⚠️ Failed to fetch accounts: {str(e)}")
         return []
     
+
+
+def update_password_in_sheet(email, new_password):
+    """Update user's password directly in the Google Sheet"""
+    try:
+        # Load service account credentials
+        creds_dict = st.secrets["gcp_service_account"]
+        gc = gspread.service_account_from_dict(creds_dict)
+        
+        # Open the user credentials spreadsheet
+        sh = gc.open_by_key("1c2IZtKKszQBSVf_4VWjZNv6-h3O9IwDizCTBhnVd1JE")
+        worksheet = sh.sheet1
+        
+        # Get all values
+        all_values = worksheet.get_all_values()
+        
+        if not all_values:
+            st.error("User sheet is empty.")
+            return False
+            
+        # Headers are in the first row
+        headers = [h.strip().lower() for h in all_values[0]]
+        
+        # Find email and password column indices
+        email_col_idx = next((i for i, h in enumerate(headers) if h == "email"), None)
+        password_col_idx = next((i for i, h in enumerate(headers) if h == "password"), None)
+        
+        if email_col_idx is None or password_col_idx is None:
+            st.error("Required columns not found in user sheet.")
+            return False
+            
+        # Find the user's row
+        user_found = False
+        for i, row in enumerate(all_values[1:], start=2):  # Start at 2 (row 1 is headers)
+            if row[email_col_idx].lower() == email.lower():
+                # Update password
+                worksheet.update_cell(i, password_col_idx + 1, new_password)
+                user_found = True
+                break
+                
+        if not user_found:
+            st.error("User not found in sheet.")
+            return False
+            
+        # Clear the cache to reload users with new password
+        st.cache_data.clear()
+        return True
+    except Exception as e:
+        st.error(f"Error updating password: {e}")
+        return False
+
+def show_password_reset_form():
+    """Show the password reset form"""
+    st.subheader("Reset Your Password")
+    st.info("Enter your new password below")
+    
+    with st.form("reset_password_form"):
+        new_password = st.text_input("New Password", type="password")
+        confirm_password = st.text_input("Confirm New Password", type="password")
+        submit = st.form_submit_button("Reset Password", use_container_width=True)
+        
+        if submit:
+            if not new_password or not confirm_password:
+                st.error("❌ Please fill in both password fields")
+            elif new_password != confirm_password:
+                st.error("❌ Passwords don't match.")
+            elif len(new_password) < 8:
+                st.error("❌ Password must be at least 8 characters.")
+            else:
+                # Update password in Google Sheet
+                success = update_password_in_sheet(
+                    st.session_state.reset_email, 
+                    new_password
+                )
+                
+                if success:
+                    st.success("✅ Password updated successfully! You can now login with your new password.")
+                    
+                    # Clear reset state
+                    st.session_state.reset_in_progress = False
+                    st.session_state.reset_email = None
+                    
+                    # Wait 2 seconds then show login form
+                    time.sleep(2)
+                    st.rerun()
+                else:
+                    st.error("❌ Failed to update password. Please try again.")
+
 
 def load_user_history(user_email, sheet):
     """Load user's quotation history from Google Sheet"""
@@ -335,62 +428,191 @@ def display_admin_preview(image_url, caption="Image Preview"):
 
 # ========== Login Interface ==========
 if not st.session_state.logged_in:
-    st.title("Login")
-    with st.form("login_form"):
-        email = st.text_input("Email")
-        password = st.text_input("Password", type="password")
-        submit_login = st.form_submit_button("Login")
-        if submit_login:
-            user = USERS.get(email)
-            if user and user["password"] == password:
-                st.session_state.logged_in = True
-                st.session_state.user_email = email
-                st.session_state.username = user["username"]
-                st.session_state.role = user["role"]
-
-                # 👉 Load quotation history from Google Sheet
-                try:
-                    # Connect to Google Sheets
-                    creds_dict = st.secrets["gcp_service_account"]
-                    gc = gspread.service_account_from_dict(creds_dict)
-                    # Open the history spreadsheet by ID
-                    sh = gc.open_by_key("1RxKb_qj5JgXPy8bz9Fur1Jj6178fEXrP5d0W6BqwjDw")
-                    worksheet = sh.sheet1  # Assumes history is in first sheet
-
-                    # Load all data into DataFrame
-                    df = get_as_dataframe(worksheet)
-                    df.dropna(how='all', inplace=True)  # Remove completely empty rows
-
-                    # Filter by user email (case-insensitive)
-                    user_records = df[df["User Email"].str.lower() == email.lower()]
-
-                    history = []
-                    import json
-                    for _, row in user_records.iterrows():
-                        try:
-                            items = json.loads(row["Items JSON"])
-                            history.append({
-                                "timestamp": row["Timestamp"],
-                                "company_name": row["Company Name"],
-                                "contact_person": row["Contact Person"],
-                                "total": float(row["Total"]),
-                                "items": items,
-                                "pdf_filename": row["PDF Filename"],
-                                "hash": row["Quotation Hash"]
-                            })
-                        except Exception as e:
-                            st.warning(f"⚠️ Skipping malformed row in history: {e}")
-                            continue
-
-                    # Save to session state
-                    st.session_state.history = history
-                except Exception as e:
-                    st.error(f"⚠️ Could not load history: {e}")
-                    st.session_state.history = []  # Fallback: empty history
-
+    st.title("🔐 Login")
+    
+    # Initialize session state for reset flow if not exists
+    if 'reset_in_progress' not in st.session_state:
+        st.session_state.reset_in_progress = False
+    if 'reset_email' not in st.session_state:
+        st.session_state.reset_email = None
+    
+    # Check if we're in password reset flow
+    if st.session_state.reset_in_progress:
+        st.subheader("Reset Your Password")
+        st.info("Enter your new password below")
+        
+        # Add BACK button at the top of the reset form
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            if st.button("← Back to Login", use_container_width=True):
+                st.session_state.reset_in_progress = False
+                st.session_state.reset_email = None
                 st.rerun()
+        
+        with st.form("reset_password_form"):
+            new_password = st.text_input("New Password", type="password")
+            confirm_password = st.text_input("Confirm New Password", type="password")
+            submit = st.form_submit_button("Reset Password", use_container_width=True)
+            
+            if submit:
+                if not new_password or not confirm_password:
+                    st.error("❌ Please fill in both password fields")
+                elif new_password != confirm_password:
+                    st.error("❌ Passwords don't match.")
+                elif len(new_password) < 8:
+                    st.error("❌ Password must be at least 8 characters.")
+                elif not st.session_state.reset_email or st.session_state.reset_email not in USERS:
+                    st.error("❌ User not found. Please check the email and try again.")
+                    st.session_state.reset_in_progress = False
+                    st.session_state.reset_email = None
+                    st.rerun()
+                else:
+                    try:
+                        # Load service account credentials
+                        creds_dict = st.secrets["gcp_service_account"]
+                        gc = gspread.service_account_from_dict(creds_dict)
+                        
+                        # Open the user credentials spreadsheet
+                        sh = gc.open_by_key("1c2IZtKKszQBSVf_4VWjZNv6-h3O9IwDizCTBhnVd1JE")
+                        worksheet = sh.sheet1
+                        
+                        # Get all values
+                        all_values = worksheet.get_all_values()
+                        
+                        if not all_values:
+                            st.error("❌ User sheet is empty.")
+                            st.stop()
+                            
+                        # Headers are in the first row
+                        headers = [h.strip().lower() for h in all_values[0]]
+                        
+                        # Find email and password column indices
+                        email_col_idx = next((i for i, h in enumerate(headers) if h == "email"), None)
+                        password_col_idx = next((i for i, h in enumerate(headers) if h == "password"), None)
+                        
+                        if email_col_idx is None or password_col_idx is None:
+                            st.error("❌ Required columns not found in user sheet.")
+                            st.stop()
+                            
+                        # Find the user's row
+                        user_found = False
+                        for i, row in enumerate(all_values[1:], start=2):  # Start at 2 (row 1 is headers)
+                            if row[email_col_idx].lower() == st.session_state.reset_email.lower():
+                                # Update password
+                                worksheet.update_cell(i, password_col_idx + 1, new_password)
+                                user_found = True
+                                break
+                                
+                        if not user_found:
+                            st.error("❌ User not found in sheet.")
+                        else:
+                            st.success("✅ Password updated successfully! You can now login with your new password.")
+                            
+                            # Clear reset state
+                            st.session_state.reset_in_progress = False
+                            st.session_state.reset_email = None
+                            
+                            # Wait 2 seconds then show login form
+                            time.sleep(2)
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Failed to update password: {e}")
+    else:
+        # Show regular login form
+        st.markdown("### Welcome to Quotation Builder")
+        
+        # Create a container for the login form
+        login_container = st.container()
+        with login_container:
+            with st.form("login_form"):
+                email = st.text_input("📧 Email Address")
+                password = st.text_input("🔒 Password", type="password")
+                submit_login = st.form_submit_button("Login", use_container_width=True)
+                
+                if submit_login:
+                    user = USERS.get(email)
+                    if user and user["password"] == password:
+                        st.session_state.logged_in = True
+                        st.session_state.user_email = email
+                        st.session_state.username = user["username"]
+                        st.session_state.role = user["role"]
+
+                        # 👉 Load quotation history from Google Sheet
+                        try:
+                            # Connect to Google Sheets
+                            creds_dict = st.secrets["gcp_service_account"]
+                            gc = gspread.service_account_from_dict(creds_dict)
+                            # Open the history spreadsheet by ID
+                            sh = gc.open_by_key("1RxKb_qj5JgXPy8bz9Fur1Jj6178fEXrP5d0W6BqwjDw")
+                            worksheet = sh.sheet1  # Assumes history is in first sheet
+
+                            # Load all data into DataFrame
+                            df = get_as_dataframe(worksheet)
+                            df.dropna(how='all', inplace=True)  # Remove completely empty rows
+
+                            # Filter by user email (case-insensitive)
+                            user_records = df[df["User Email"].str.lower() == email.lower()]
+
+                            history = []
+                            import json
+                            for _, row in user_records.iterrows():
+                                try:
+                                    items = json.loads(row["Items JSON"])
+                                    history.append({
+                                        "timestamp": row["Timestamp"],
+                                        "company_name": row["Company Name"],
+                                        "contact_person": row["Contact Person"],
+                                        "total": float(row["Total"]),
+                                        "items": items,
+                                        "pdf_filename": row["PDF Filename"],
+                                        "hash": row["Quotation Hash"]
+                                    })
+                                except Exception as e:
+                                    st.warning(f"⚠️ Skipping malformed row in history: {e}")
+                                    continue
+
+                            # Save to session state
+                            st.session_state.history = history
+                        except Exception as e:
+                            st.error(f"⚠️ Could not load history: {e}")
+                            st.session_state.history = []  # Fallback: empty history
+
+                        st.success(f"✅ Welcome back, {user['username']}!")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("❌ Incorrect email or password.")
+        
+        # Add action buttons outside the form
+        col1, col2 = st.columns([3, 1])
+        with col2:
+            if st.button("🔄 Refresh Users", use_container_width=True):
+                # Clear the cache for the users loading function
+                load_users_from_sheet.clear()
+                # Recreate the USERS dictionary
+                USERS = load_users_from_sheet()
+                st.success("✅ Users sheet has been refreshed!")
+                st.rerun()
+        
+        # Forgot password button (outside the form)
+        if st.button("Forgot Password?", type="secondary", use_container_width=True):
+            if not email or "@" not in email:
+                st.error("❌ Please enter a valid email address first")
+            elif email not in USERS:
+                st.error("❌ Email not found in our system")
             else:
-                st.error("❌ Incorrect email or password.")
+                st.session_state.reset_in_progress = True
+                st.session_state.reset_email = email
+                st.rerun()
+        
+        # Add some information about the system
+        with st.expander("ℹ️ System Information"):
+            st.markdown("""
+            - This system is for authorized users only
+            - Your credentials are stored securely
+            - Contact admin if you need assistance
+            """)
+    
     st.stop()
 # ========== Logout & History Sidebar ==========
 st.sidebar.success(f"Logged in as: {st.session_state.user_email} ({st.session_state.role})")
@@ -1158,14 +1380,19 @@ elif st.session_state.role == "buyer":
             # st.stop
 
 # ========== Quotation Display Section ==========
+# ========== Quotation Display Section ==========
 if ((st.session_state.role == "buyer") or 
     (st.session_state.role == "admin" and st.session_state.get('admin_choice') == "quotation")) and \
     st.session_state.get('form_submitted', False):
-
-    # if st.session_state.role == "admin" and st.session_state.get('admin_choice') == "quotation":
-    #     if st.button("← Back to Options"):
-    #         st.session_state.form_submitted = True
-    #         st.rerun()
+    # Initialize session state for custom products if not exists
+    if 'custom_products' not in st.session_state:
+        st.session_state.custom_products = []
+    
+    # Initialize shipping and installation fees if not exists
+    if 'shipping_fee' not in st.session_state:
+        st.session_state.shipping_fee = 0.0
+    if 'installation_fee' not in st.session_state:
+        st.session_state.installation_fee = 0.0
 
     company_details = st.session_state.company_details
     st.markdown(f"📋 Quotation for {company_details['company_name']}")
@@ -1208,6 +1435,8 @@ if ((st.session_state.role == "buyer") or
     total_sum = 0
     checkDiscount = False
     basePrice = 0.0
+    
+    # Process regular products first
     for idx in st.session_state.row_indices:
         # Update column definition to include description
         c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 = st.columns([3.0, 3.0, 1.8, 1.4, 2.5, 2.0, 2.0, 2.0, 2.0, 0.8])
@@ -1243,7 +1472,7 @@ if ((st.session_state.role == "buyer") or
                             value=st.session_state.description_edits[prod], 
                             key=f"desc_{idx}",
                             label_visibility="collapsed",
-                            height=60)
+                            height=68)
             # Update session state with new description
             st.session_state.description_edits[prod] = description
             
@@ -1286,7 +1515,7 @@ if ((st.session_state.role == "buyer") or
             # Add to output data
             output_data.append({
                 "Item": prod,
-                "Description": description,  # Use edited description
+                "Description": description,
                 "Color": color_map.get(prod, ""),
                 "Dimensions": dim_map.get(prod, ""),
                 "Image": convert_google_drive_url_for_display(image_url) if image_url else "",
@@ -1305,11 +1534,143 @@ if ((st.session_state.role == "buyer") or
     if st.button("➕ Add Product"):
         st.session_state.row_indices.append(max(st.session_state.row_indices, default=-1) + 1)
         st.rerun()
+    
+    # ====== CUSTOM PRODUCT SECTION ======
+    st.markdown("---")
+    st.subheader("✨ Add Custom Product")
+    
+    with st.expander("Add a product not in our catalog", expanded=False):
+        st.info("💡 Create custom items that will only appear in this quotation (won't be saved to database)")
+        
+        form_col, image_col = st.columns([2, 1])
+        
+        with form_col:
+            with st.form("custom_product_form"):
+                custom_item = st.text_input("Product Name*", help="Required field")
+                custom_price = st.number_input("Price per Item", min_value=0.0, format="%.2f", value=0.0)
+                custom_desc = st.text_area("Material / Description")
+                custom_color = st.text_input("Color")
+                custom_dim = st.text_input("Dimensions (Optional)")
+                custom_warranty = st.text_input("Warranty (e.g., 1 year)", help="Enter warranty information")
+                custom_image = st.text_input("Image URL (Optional)", help="Paste Google Drive link or direct image URL")
+                
+                submitted = st.form_submit_button("➕ Add to Quotation")
+                
+                if submitted:
+                    if not custom_item.strip():
+                        st.warning("❌ Product name is required.")
+                    else:
+                        # Add to session state as a custom product
+                        custom_product = {
+                            "Item": custom_item.strip(),
+                            "Description": custom_desc,
+                            "Color": custom_color,
+                            "Dimensions": custom_dim,
+                            "Warranty": custom_warranty,
+                            "Image": custom_image,
+                            "Price per item": custom_price,
+                            "is_custom": True
+                        }
+                        
+                        st.session_state.custom_products.append(custom_product)
+                        st.success(f"✅ '{custom_item}' added to your quotation!")
+                        st.rerun()
+        
+        with image_col:
+            st.markdown("### Image Preview:")
+            if 'custom_image' in locals() and custom_image:
+                display_admin_preview(custom_image, "Preview of entered image URL")
+            else:
+                st.info("📷 No image URL provided")
+            st.markdown("---")
+            st.markdown("### Supported Formats:")
+            st.markdown("• Direct image URLs (.jpg, .png, etc.)")
+            st.markdown("• Google Drive shared links")
+            st.markdown("**Example:**")
+            st.code("https://drive.google.com/file/d/1vN8l2FX.../view", language="text")
+    
+    # Display custom products in the main product table
+    for idx, custom_product in enumerate(st.session_state.custom_products):
+        c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 = st.columns([3.0, 3.0, 1.8, 1.4, 2.5, 2.0, 2.0, 2.0, 2.0, 0.8])
+        
+        # Mark as custom product
+        c1.markdown(f"**{custom_product['Item']}**  \n`[Custom Product]`")
+        
+        # Description (editable)
+        description = c2.text_area("", 
+                        value=custom_product.get("Description", ""), 
+                        key=f"custom_desc_{idx}",
+                        label_visibility="collapsed",
+                        height=68)
+        
+        # Update description in session state
+        st.session_state.custom_products[idx]["Description"] = description
+        
+        # SKU - N/A for custom products
+        c3.write("N/A")
+        
+        # Warranty
+        c4.write(custom_product.get("Warranty", "N/A"))
+        
+        # Image
+        image_url = custom_product.get("Image", "")
+        display_product_image(c5, custom_product['Item'], image_url)
+        
+        # Price per item (editable)
+        edited_price = c6.number_input(
+            "", 
+            min_value=0.0, 
+            value=float(custom_product.get("Price per item", 0.0)), 
+            format="%.2f",
+            key=f"custom_price_{idx}",
+            label_visibility="collapsed"
+        )
+        st.session_state.custom_products[idx]["Price per item"] = edited_price
+        
+        # Quantity
+        qty = c7.number_input("", min_value=1, value=1, step=1, key=f"custom_qty_{idx}", label_visibility="collapsed")
+        
+        # Discount (editable)
+        discount = c8.number_input("", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"custom_disc_{idx}", label_visibility="collapsed")
+        valid_discount = 0.0 if discount > 20 else discount
+        if discount > 20:
+            st.warning(f"⚠ Max 20% discount allowed for '{custom_product['Item']}'. Ignoring discount.")
+        if valid_discount > 0:
+            checkDiscount = True
+        
+        # Calculate with edited price
+        basePrice += edited_price * qty
+        discounted_price = edited_price * (1 - valid_discount / 100)
+        line_total = discounted_price * qty
+        
+        # Display totals
+        c9.write(f"{line_total:.2f} EGP")
+        
+        # Clear button
+        if c10.button("X", key=f"custom_clear_{idx}"):
+            st.session_state.custom_products.pop(idx)
+            st.rerun()
+        
+        # Add to output data
+        output_data.append({
+            "Item": custom_product["Item"],
+            "Description": description,
+            "Color": custom_product.get("Color", ""),
+            "Dimensions": custom_product.get("Dimensions", ""),
+            "Image": convert_google_drive_url_for_display(image_url) if image_url else "",
+            "Quantity": qty,
+            "Price per item": edited_price,
+            "Discount %": valid_discount,
+            "Total price": line_total,
+            "SKU": "N/A",
+            "Warranty": custom_product.get("Warranty", ""),
+            "is_custom": True
+        })
+        total_sum += line_total
 
     st.markdown("---")
     final_total = total_sum
 
-    # 💥 HOOK: AI Discount Negotiator
     if not checkDiscount:
         overall_discount = st.number_input("🧮 Overall Quotation Discount (%)", min_value=0.0, max_value=100.0, step=0.1, value=0.0)
         if overall_discount > 15.0:
@@ -1329,7 +1690,7 @@ if ((st.session_state.role == "buyer") or
                 st.warning("💡 Try clicking 'Request AI Approval' for discounts over 15%!")
         else:
             final_total = total_sum * (1 - overall_discount / 100)
-
+        
         st.markdown(f"💰 *Total Before Discount: {total_sum:.2f} EGP")
         if overall_discount > 0:
             st.markdown(f"🔻 *Discount Applied: {overall_discount:.1f}%")
@@ -1337,8 +1698,42 @@ if ((st.session_state.role == "buyer") or
     else:
         st.markdown("⚠ You cannot add overall discount when individual discounts are applied")
 
+    # ====== SHIPPING AND INSTALLATION FEE FIELDS ======
+    st.markdown("### 🚚 Additional Fees")
+    shipping_fee = st.number_input(
+        "Shipping Fee (EGP)", 
+        min_value=0.0, 
+        value=float(st.session_state.shipping_fee), 
+        step=1.0,
+        help="Optional shipping fee to be added to the total"
+    )
+    installation_fee = st.number_input(
+        "Installation Fee (EGP)", 
+        min_value=0.0, 
+        value=float(st.session_state.installation_fee), 
+        step=1.0,
+        help="Optional installation fee to be added to the total"
+    )
+
+    # Update session state with new values
+    st.session_state.shipping_fee = shipping_fee
+    st.session_state.installation_fee = installation_fee
+
+    # Calculate total with additional fees
+    total_with_fees = final_total + shipping_fee + installation_fee
+
+    # Display the additional fees in the summary if they're not zero
+    if shipping_fee > 0 or installation_fee > 0:
+        st.markdown("---")
+        if shipping_fee > 0:
+            st.markdown(f"🚚 *Shipping Fee: {shipping_fee:.2f} EGP*")
+        if installation_fee > 0:
+            st.markdown(f"🔧 *Installation Fee: {installation_fee:.2f} EGP*")
+        st.markdown(f"🧾 **Total with Additional Fees: {total_with_fees:.2f} EGP**")
+
     st.markdown("---")
-    st.markdown(f"### 💰 Grand Total: {final_total:.2f} EGP")
+    st.markdown(f"### 💰 Grand Total: {total_with_fees:.2f} EGP")
+    
     if output_data:
         st.dataframe(pd.DataFrame(output_data), use_container_width=True)
 
@@ -1571,22 +1966,38 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         elems.append(table)
 
         # === Summary Table (Match item table width) ===
+        # === Summary Table (Match item table width) ===
         subtotal = sum(float(r.get('Price per item', 0)) * float(r.get('Quantity', 1)) for r in data_from_hash)
         total_after_discount = total
         discount_amount = subtotal - total_after_discount
         vat_rate = company_details.get("vat_rate", 0.14)  # Default to 14% if not set
-        vat = total_after_discount * vat_rate
-        grand_total = total_after_discount + vat
 
+        # Get shipping and installation fees from company_details or default to 0
+        shipping_fee = float(company_details.get("shipping_fee", 0.0))
+        installation_fee = float(company_details.get("installation_fee", 0.0))
+
+        # Start building the summary
         summary_data = [["Total", f"{subtotal:.2f} EGP"]]
         if discount_amount > 0:
             summary_data.append(["Special Discount", f"- {discount_amount:.2f} EGP"])
+
         summary_data.append(["Total After Discount", f"{total_after_discount:.2f} EGP"])
+
+        # Add shipping and installation fees only if > 0
+        if shipping_fee > 0:
+            summary_data.append(["Shipping Fee", f"{shipping_fee:.2f} EGP"])
+        if installation_fee > 0:
+            summary_data.append(["Installation Fee", f"{installation_fee:.2f} EGP"])
+
+        # Now calculate VAT on Total After Discount (not including shipping/installation)
+        vat = total_after_discount * vat_rate
         if vat_rate == 0.14:
             summary_data.append(["VAT (14%)", f"{vat:.2f} EGP"])
         elif vat_rate == 0.13:
             summary_data.append(["VAT (13%)", f"{vat:.2f} EGP"])
-        # summary_data.append(["VAT (14%)", f"{vat:.2f} EGP"])
+
+        # Final grand total including all fees
+        grand_total = total_after_discount + shipping_fee + installation_fee + vat
         summary_data.append(["Grand Total", f"{grand_total:.2f} EGP"])
 
         summary_col_widths = [total_table_width - 150, 150]
@@ -1672,6 +2083,7 @@ def load_user_history_from_sheet(user_email, sheet):
         return []
 
 
+# Before generating PDF
 
 if st.button("📅 Generate PDF Quotation") and output_data:
     with st.spinner("Generating PDF and saving to cloud history..."):
@@ -1679,6 +2091,10 @@ if st.button("📅 Generate PDF Quotation") and output_data:
         data_str = str(output_data) + str(final_total) + str(company_details)
         data_hash = hashlib.md5(data_str.encode()).hexdigest()
         pdf_filename = f"{company_details['company_name']}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+        company_details = st.session_state.company_details.copy()
+        company_details["shipping_fee"] = st.session_state.shipping_fee
+        company_details["installation_fee"] = st.session_state.installation_fee
+        
         pdf_file = build_pdf_cached(data_hash, final_total, company_details)
 
         # 👉 Prepare record
@@ -1906,7 +2322,6 @@ if output_data and 'pdf_data' in st.session_state:
                 st.success(f"✅ Saved to Zoho CRM! Record ID: {result['record_id']}")
             else:
                 st.error(f"❌ Failed to save: {result['error']}")
-
 
 
 
