@@ -1,13 +1,14 @@
 import streamlit as st
 import pandas as pd
 import hashlib
+import math
 from datetime import datetime
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer, Paragraph, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.pagesizes import A3
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
-from reportlab.platypus import PageBreak
+# from reportlatypus import PageBreak
 from io import BytesIO
 import requests
 import tempfile
@@ -17,6 +18,16 @@ from PIL import Image as PILImage
 import time
 import gspread
 from gspread_dataframe import get_as_dataframe
+import json
+
+# Helper function to safely convert any value to lowercase string
+def safe_lower(value):
+    """Safely convert any value to lowercase string, handling None and NaN values"""
+    if value is None:
+        return ""
+    if isinstance(value, float) and math.isnan(value):
+        return ""
+    return str(value).lower()
 
 # ========== Page Config ==========
 st.set_page_config(page_title="Quotation History", page_icon="📜", layout="wide")
@@ -33,14 +44,22 @@ if 'history' not in st.session_state:
 # ========== Google Sheets Connection ==========
 @st.cache_resource
 def get_history_sheet():
-    """Connect to Google Sheet by ID and return worksheet"""
+    """Connect to 'Amjad's history' Google Sheet"""
     try:
-        creds_dict = st.secrets["gcp_service_account"]
-        gc = gspread.service_account_from_dict(creds_dict)
-        sh = gc.open_by_key("1RxKb_qj5JgXPy8bz9Fur1Jj6178fEXrP5d0W6BqwjDw")
+        gc = gspread.service_account(filename="amjad_quotation_service_account.json")
+        sh = gc.open("Amjad's history")  # ← Spreadsheet name
         return sh.sheet1
+    except gspread.SpreadsheetNotFound:
+        st.error("❌ Spreadsheet **'Amjad's history'** not found.")
+        st.info("💡 Make sure:")
+        st.markdown("""
+        - The spreadsheet is named exactly: `Amjad's history`  
+        - It is shared with: `amjadquotation@quotationappamjad.iam.gserviceaccount.com`  
+        - The service account has **Editor** access
+        """)
+        return None
     except Exception as e:
-        st.error(f"❌ Cannot connect to history sheet: {e}")
+        st.error(f"❌ Failed to connect to history sheet: {e}")
         return None
 
 def load_user_history_from_sheet(user_email, sheet):
@@ -52,7 +71,6 @@ def load_user_history_from_sheet(user_email, sheet):
         df.dropna(how='all', inplace=True)  # Remove completely empty rows
         user_rows = df[df["User Email"].str.lower() == user_email.lower()]
         history = []
-        import json
         for _, row in user_rows.iterrows():
             try:
                 items = json.loads(row["Items JSON"])
@@ -62,24 +80,24 @@ def load_user_history_from_sheet(user_email, sheet):
                 except:
                     company_details = {}
 
-                # 🔐 Generate fallback hash if not present
+                # 🔐 Ensure a valid hash exists
                 stored_hash = str(row.get("Quotation Hash", "")).strip()
-                if not stored_hash or stored_hash.lower() == "nan":
-                    # Create deterministic fallback hash
+                if pd.isna(row.get("Quotation Hash")) or not stored_hash or stored_hash.lower() in ("nan", "none", "null", ""):
+                    # Fallback: deterministic hash from key fields
                     fallback_data = f"{row['Company Name']}{row['Timestamp']}{row['Total']}"
                     stored_hash = hashlib.md5(fallback_data.encode()).hexdigest()
 
                 history.append({
-                    "user_email": row["User Email"],
-                    "timestamp": row["Timestamp"],
-                    "company_name": row["Company Name"],
-                    "contact_person": row["Contact Person"],
-                    "total": float(row["Total"]),
-                    "items": items,
-                    "pdf_filename": row["PDF Filename"],
-                    "hash": stored_hash,  # Always ensure this exists
-                    "company_details": company_details
-                })
+                  "user_email": row["User Email"],
+                  "timestamp": row["Timestamp"],
+                  "company_name": row["Company Name"],
+                  "contact_person": row["Contact Person"],
+                  "total": float(row["Total"]),
+                  "items": items,
+                  "pdf_filename": row["PDF Filename"],
+                  "hash": stored_hash,  # ← Guaranteed to exist
+                  "company_details": company_details
+              })
             except Exception as e:
                 st.warning(f"⚠️ Skipping malformed row (Company: {row.get('Company Name', 'Unknown')}): {e}")
                 continue
@@ -87,13 +105,13 @@ def load_user_history_from_sheet(user_email, sheet):
     except Exception as e:
         st.error(f"❌ Failed to load history: {e}")
         return []
+
 def save_quotation_to_sheet(quote, sheet):
     """
     Save a quotation record to Google Sheet
     quote: dict (same structure as st.session_state.history item)
     sheet: gspread worksheet object
     """
-    import json
     row = [
         quote["user_email"],
         quote["timestamp"],
@@ -385,14 +403,38 @@ if st.button("🔄 Refresh History from Cloud"):
         st.error("Failed to connect to Google Sheets.")
     st.rerun()
 
+# ========== Search Bar ==========
+st.markdown("---")
+search_col, clear_col = st.columns([4, 1])
+with search_col:
+    search_term = st.text_input("🔍 Search quotations", 
+                               placeholder="Search by company name...",
+                               key="search_input").strip().lower()
+with clear_col:
+    st.markdown('<div style="height: 25px;"></div>', unsafe_allow_html=True)
+    if st.button("Clear Search", use_container_width=True, key="clear_search_btn"):
+        st.rerun()
+
+if search_term:
+    filtered_history = [quote for quote in st.session_state.history 
+                       if search_term in safe_lower(quote['company_name'])]
+    st.caption(f"Found {len(filtered_history)} quotation(s) matching your search")
+else:
+    filtered_history = st.session_state.history
+    if st.session_state.history:
+        st.caption(f"Displaying all {len(st.session_state.history)} quotations")
+
 st.markdown("---")
 
 # ========== Display History ==========
-if not st.session_state.history:
-    st.info("📭 No quotations created yet. Start building one!")
+if not filtered_history:
+    if search_term:
+        st.info(f"📭 No quotations found for '{search_term}'. Try a different search.")
+    else:
+        st.info("📭 No quotations created yet. Start building one!")
 else:
-    # Display all past quotations
-    for idx, quote in enumerate(reversed(st.session_state.history)):
+    # Display filtered history instead of full history
+    for idx, quote in enumerate(reversed(filtered_history)):
         with st.expander(f"📄 {quote['company_name']} – {quote['total']:.2f} EGP ({quote['timestamp']})"):
             st.write(f"**Contact:** {quote['contact_person']} | **Items:** {len(quote['items'])}")
             st.dataframe(pd.DataFrame(quote['items']), use_container_width=True)
@@ -446,7 +488,9 @@ else:
                                     st.success("🗑️ Quotation deleted from Google Sheet!")
 
                             # ✅ Remove from session state
-                            st.session_state.history.pop(len(st.session_state.history) - 1 - idx)
+                            # Calculate the actual index in the original history list
+                            original_idx = len(st.session_state.history) - 1 - idx
+                            st.session_state.history.pop(original_idx)
                             st.success("🗑️ Quotation deleted from session!")
 
                             # 🔄 Optional: Refresh history to stay in sync
@@ -459,6 +503,7 @@ else:
                         st.session_state[f"confirm_delete_{idx}"] = True
                         st.warning("⚠️ Press 'Delete' again to confirm.")
                         st.rerun()
+            
             # Edit Button
             with col3:
                 if st.button("✏️ Edit Quotation", key=f"edit_{idx}_{quote['hash']}"):
