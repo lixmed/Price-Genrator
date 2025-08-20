@@ -44,8 +44,9 @@ def init_session_state():
 init_session_state()
 
 
-def get_zoho_access_token():
-    """Refresh Zoho access token using refresh_token"""
+REFRESH_INTERVAL = 55 * 60
+
+def _request_new_token():
     url = f"{st.secrets['zoho']['accounts_domain']}/oauth/v2/token"
     payload = {
         "refresh_token": st.secrets["zoho"]["refresh_token"],
@@ -53,12 +54,40 @@ def get_zoho_access_token():
         "client_secret": st.secrets["zoho"]["client_secret"],
         "grant_type": "refresh_token"
     }
+    r = requests.post(url, data=payload)
+    r.raise_for_status()
+    data = r.json()
+    token = data.get("access_token")
+    if not token:
+        raise RuntimeError("No access_token in Zoho response: " + str(data))
+
+    now = time.time()
+    st.session_state["zoho_access_token"] = token
+    st.session_state["zoho_token_ts"] = now
+    expires_in = data.get("expires_in")
+    if expires_in:
+        st.session_state["zoho_token_expires_at"] = now + int(expires_in)
+    return token
+
+def get_zoho_access_token():
+    """Return a cached access token, refreshing if older than 55 minutes."""
     try:
-        r = requests.post(url, data=payload)
-        r.raise_for_status()
-        return r.json()["access_token"]
+        now = time.time()
+        token = st.session_state.get("zoho_access_token")
+        ts = st.session_state.get("zoho_token_ts", 0)
+
+        # If we have a cached token and it's younger than REFRESH_INTERVAL, return it
+        if token and (now - ts) < REFRESH_INTERVAL:
+            return token
+
+        # Otherwise request a fresh token and cache it
+        return _request_new_token()
+
     except requests.exceptions.RequestException as e:
         st.error(f"Token refresh failed: {e.response.text if e.response else str(e)}")
+        raise
+    except Exception as e:
+        st.error(f"Unexpected error while getting Zoho token: {str(e)}")
         raise
 
 
@@ -66,21 +95,12 @@ def fetch_zoho_accounts():
     """Fetch Account_Name, Phone, Owner, and Billing_Street from Zoho CRM"""
     try:
         token = get_zoho_access_token()
-        # Use the correct CRM API domain
         url = f"{st.secrets['zoho']['crm_api_domain']}/crm/v2/Accounts"
-        # Specify ALL the fields you need (comma-separated)
-        params = {
-            "fields": "Account_Name,Phone,Owner,Billing_Street"
-        }
+        params = {"fields": "Account_Name,Phone,Owner,Billing_Street"}
         headers = {"Authorization": f"Zoho-oauthtoken {token}"}
-        
         response = requests.get(url, headers=headers, params=params)
         response.raise_for_status()
-        
-        # Return the full account data (all requested fields)
-        accounts_data = response.json().get("data", [])
-        return accounts_data
-        
+        return response.json().get("data", [])
     except Exception as e:
         st.error(f"⚠️ Failed to fetch accounts: {str(e)}")
         return []
@@ -1875,6 +1895,7 @@ if output_data and 'pdf_data' in st.session_state:
                 st.success(f"✅ Saved to Zoho CRM! Record ID: {result['record_id']}")
             else:
                 st.error(f"❌ Failed to save: {result['error']}")
+
 
 
 
