@@ -123,6 +123,28 @@ def generate_temp_password(length=12):
     temp_password = ''.join(random.choice(characters) for _ in range(length))
     return temp_password
 
+
+st.write("🔍 DEBUG: Checking secrets configuration...")
+try:
+    # Check if SMTP section exists
+    if "smtp" in st.secrets:
+        st.write("✅ SMTP section found in secrets")
+        # Check individual SMTP values
+        st.write(f"SMTP server: {st.secrets['smtp'].get('server', 'NOT FOUND')}")
+        st.write(f"SMTP port: {st.secrets['smtp'].get('port', 'NOT FOUND')}")
+        st.write(f"SMTP username: {st.secrets['smtp'].get('username', 'NOT FOUND')}")
+        st.write(f"SMTP from_email: {st.secrets['smtp'].get('from_email', 'NOT FOUND')}")
+    else:
+        st.error("❌ SMTP section NOT FOUND in secrets")
+    
+    # Check if entire secrets dictionary is empty
+    if not st.secrets:
+        st.error("❌ st.secrets is completely empty!")
+    
+except Exception as e:
+    st.error(f"❌ Error checking secrets: {str(e)}")
+
+
 def send_password_reset_email(user_email, new_password):
     """Send new password to user's email"""
     try:
@@ -2211,3 +2233,4 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
+
