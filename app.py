@@ -1162,10 +1162,10 @@ if ((st.session_state.role == "buyer") or
     (st.session_state.role == "admin" and st.session_state.get('admin_choice') == "quotation")) and \
     st.session_state.get('form_submitted', False):
 
-    if st.session_state.role == "admin" and st.session_state.get('admin_choice') == "quotation":
-        if st.button("← Back to Options"):
-            st.session_state.form_submitted = True
-            st.rerun()
+    # if st.session_state.role == "admin" and st.session_state.get('admin_choice') == "quotation":
+    #     if st.button("← Back to Options"):
+    #         st.session_state.form_submitted = True
+    #         st.rerun()
 
     company_details = st.session_state.company_details
     st.markdown(f"📋 Quotation for {company_details['company_name']}")
@@ -1186,7 +1186,8 @@ if ((st.session_state.role == "buyer") or
     # Initialize discount edits session state if not exists
     if 'discount_edits' not in st.session_state:
         st.session_state.discount_edits = {}
-if 'description_edits' not in st.session_state:
+
+    if 'description_edits' not in st.session_state:
         st.session_state.description_edits = {}
 
     products = df['Item Name'].tolist()
@@ -1905,8 +1906,6 @@ if output_data and 'pdf_data' in st.session_state:
                 st.success(f"✅ Saved to Zoho CRM! Record ID: {result['record_id']}")
             else:
                 st.error(f"❌ Failed to save: {result['error']}")
-
-
 
 
 
