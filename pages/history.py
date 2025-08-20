@@ -2,13 +2,12 @@ import streamlit as st
 import pandas as pd
 import hashlib
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer, Paragraph, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.pagesizes import A3
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
-# from reportlatypus import PageBreak
 from io import BytesIO
 import requests
 import tempfile
@@ -19,6 +18,7 @@ import time
 import gspread
 from gspread_dataframe import get_as_dataframe
 import json
+from reportlab.platypus import Paragraph, Spacer, PageBreak
 
 # Helper function to safely convert any value to lowercase string
 def safe_lower(value):
@@ -44,17 +44,21 @@ if 'history' not in st.session_state:
 # ========== Google Sheets Connection ==========
 @st.cache_resource
 def get_history_sheet():
-    """Connect to 'Amjad's history' Google Sheet"""
+    """Connect to the Quotation History Google Sheet using the correct ID"""
     try:
-        gc = gspread.service_account(filename="amjad_quotation_service_account.json")
-        sh = gc.open("Amjad's history")  # ← Spreadsheet name
-        return sh.sheet1
+        # Load service account info from Streamlit secrets
+        creds_dict = st.secrets["gcp_service_account"]
+        gc = gspread.service_account_from_dict(creds_dict)
+        
+        # Open the spreadsheet by ID (from the provided link)
+        sh = gc.open_by_key("1RxKb_qj5JgXPy8bz9Fur1Jj6178fEXrP5d0W6BqwjDw")
+        return sh.sheet1  # Assumes history is in first sheet
     except gspread.SpreadsheetNotFound:
-        st.error("❌ Spreadsheet **'Amjad's history'** not found.")
+        st.error(f"❌ Spreadsheet with ID '1RxKb_qj5JgXPy8bz9Fur1Jj6178fEXrP5d0W6BqwjDw' not found.")
         st.info("💡 Make sure:")
         st.markdown("""
-        - The spreadsheet is named exactly: `Amjad's history`  
-        - It is shared with: `amjadquotation@quotationappamjad.iam.gserviceaccount.com`  
+        - The spreadsheet ID is correct
+        - It is shared with: `quotationappserviceaccount@quotationapp-465511.iam.gserviceaccount.com`  
         - The service account has **Editor** access
         """)
         return None
@@ -69,18 +73,44 @@ def load_user_history_from_sheet(user_email, sheet):
     try:
         df = get_as_dataframe(sheet)
         df.dropna(how='all', inplace=True)  # Remove completely empty rows
+        
+        # Debug: Show available columns
+        st.session_state.debug_columns = df.columns.tolist()
+        
+        # Filter by user email (case-insensitive)
         user_rows = df[df["User Email"].str.lower() == user_email.lower()]
         history = []
         for _, row in user_rows.iterrows():
             try:
                 items = json.loads(row["Items JSON"])
-                company_details_raw = row.get("Company Details JSON", "{}")
-                try:
-                    company_details = json.loads(company_details_raw) if pd.notna(company_details_raw) and company_details_raw.strip() != "" else {}
-                except:
-                    company_details = {}
-
-                # 🔐 Ensure a valid hash exists
+                
+                # IMPORTANT: The sheet doesn't have "Company Details JSON" column
+                # Instead, we'll reconstruct company details from individual fields
+                company_details = {
+                    "company_name": row["Company Name"],
+                    "contact_person": row["Contact Person"],
+                    "contact_email": "",  # Not stored in sheet
+                    "contact_phone": "",  # Not stored in sheet
+                    "address": "",  # Not stored in sheet
+                    "warranty": "1 year",  # Default value
+                    "down_payment": 50.0,  # Default value
+                    "delivery": "Expected in 3–4 weeks",  # Default value
+                    "vat_note": "Prices exclude 14% VAT",  # Default value
+                    "shipping_note": "Shipping & Installation fees to be added",  # Default value
+                    "bank": "CIB",  # Default value
+                    "iban": "EG340010015100000100049865966",  # Default value
+                    "account_number": "100049865966",  # Default value
+                    "company": "FlakeTech for Trading Company",  # Default value
+                    "tax_id": "626180228",  # Default value
+                    "reg_no": "15971",  # Default value
+                    "prepared_by": st.session_state.username,
+                    "prepared_by_email": st.session_state.user_email,
+                    "current_date": datetime.now().strftime("%A, %B %d, %Y"),
+                    "valid_till": (datetime.now() + timedelta(days=10)).strftime("%A, %B %d, %Y"),
+                    "quotation_validity": "30 days"
+                }
+                
+                # Ensure a valid hash exists
                 stored_hash = str(row.get("Quotation Hash", "")).strip()
                 if pd.isna(row.get("Quotation Hash")) or not stored_hash or stored_hash.lower() in ("nan", "none", "null", ""):
                     # Fallback: deterministic hash from key fields
@@ -88,16 +118,16 @@ def load_user_history_from_sheet(user_email, sheet):
                     stored_hash = hashlib.md5(fallback_data.encode()).hexdigest()
 
                 history.append({
-                  "user_email": row["User Email"],
-                  "timestamp": row["Timestamp"],
-                  "company_name": row["Company Name"],
-                  "contact_person": row["Contact Person"],
-                  "total": float(row["Total"]),
-                  "items": items,
-                  "pdf_filename": row["PDF Filename"],
-                  "hash": stored_hash,  # ← Guaranteed to exist
-                  "company_details": company_details
-              })
+                    "user_email": row["User Email"],
+                    "timestamp": row["Timestamp"],
+                    "company_name": row["Company Name"],
+                    "contact_person": row["Contact Person"],
+                    "total": float(row["Total"]),
+                    "items": items,
+                    "pdf_filename": row["PDF Filename"],
+                    "hash": stored_hash,
+                    "company_details": company_details
+                })
             except Exception as e:
                 st.warning(f"⚠️ Skipping malformed row (Company: {row.get('Company Name', 'Unknown')}): {e}")
                 continue
@@ -106,28 +136,42 @@ def load_user_history_from_sheet(user_email, sheet):
         st.error(f"❌ Failed to load history: {e}")
         return []
 
-def save_quotation_to_sheet(quote, sheet):
-    """
-    Save a quotation record to Google Sheet
-    quote: dict (same structure as st.session_state.history item)
-    sheet: gspread worksheet object
-    """
-    row = [
-        quote["user_email"],
-        quote["timestamp"],
-        quote["company_name"],
-        quote["contact_person"],
-        f"{quote['total']:.2f}",
-        json.dumps(quote["items"]),
-        json.dumps(quote.get("company_details", {})),
-        quote["pdf_filename"],
-        quote["hash"]
-    ]
+def delete_history_record(quotation_hash):
+    """Delete a specific quotation record from the history sheet"""
     try:
-        sheet.append_row(row)
+        history_sheet = get_history_sheet()
+        if not history_sheet:
+            st.error("❌ Failed to connect to history sheet")
+            return False
+            
+        # Get all data from the sheet
+        df = get_as_dataframe(history_sheet)
+        if df.empty:
+            st.error("❌ History sheet is empty")
+            return False
+            
+        # Find the row with matching quotation hash
+        normalized_hash = str(quotation_hash).strip()
+        matching_rows = df[df["Quotation Hash"].astype(str).str.strip() == normalized_hash]
+        
+        if len(matching_rows) == 0:
+            st.error("❌ Quotation record not found")
+            return False
+            
+        # Get the row index (adding 2 because: 0-indexed DataFrame + header row + 1 for Google Sheets)
+        row_index = matching_rows.index[0] + 2
+        
+        # Delete the row
+        history_sheet.delete_rows(int(row_index))
+        
+        # Clear cache and refresh
+        st.cache_data.clear()
+        
+        st.success(f"✅ Quotation record deleted successfully!")
         return True
+        
     except Exception as e:
-        st.error(f"❌ Failed to save to Google Sheet: {e}")
+        st.error(f"❌ Failed to delete quotation record: {str(e)}")
         return False
 
 # ========== Google Drive URL Conversion ==========
@@ -289,10 +333,18 @@ def generate_pdf_from_data(items, total, company_details, hdr_path="q2.png", ftr
         def safe_float(val):
             return "" if is_empty(val) else f"{float(val):.2f}"
 
-        product_table_data = [["Ser.", "Product", "Image", "SKU", "Details", "QTY", "Unit Price", "Line Total"]]
+        # Check if any items have discounts
+        has_discounts = any(float(item.get('Discount %', 0)) > 0 for item in data)
+        
+        # Base headers
+        base_headers = ["Ser.", "Product", "Image", "SKU", "Details", "QTY", "Unit Price", "Line Total"]
+        if has_discounts:
+            base_headers.insert(7, "Disc %")  # Insert after "Unit Price"
+            
+        product_table_data = [base_headers]
         temp_files = []
 
-        for idx, r in enumerate(items, start=1):
+        for idx, r in enumerate(data, start=1):
             img_element = "No Image"
             if r.get("Image"):
                 download_url = convert_google_drive_url_for_storage(r["Image"])
@@ -314,7 +366,9 @@ def generate_pdf_from_data(items, total, company_details, hdr_path="q2.png", ftr
                 f"<b>Warranty:</b> {safe_str(r.get('Warranty'))}"
             )
             details_para = Paragraph(details_text, desc_style)
-            product_table_data.append([
+            
+            # Base row
+            row = [
                 str(idx),
                 Paragraph(safe_str(r.get('Item')), styleN),
                 img_element,
@@ -323,9 +377,21 @@ def generate_pdf_from_data(items, total, company_details, hdr_path="q2.png", ftr
                 Paragraph(safe_str(r.get('Quantity')), styleN),
                 Paragraph(safe_float(r.get('Price per item')), styleN),
                 Paragraph(safe_float(r.get('Total price')), styleN),
-            ])
+            ]
+            
+            # Add discount column if needed
+            if has_discounts:
+                discount_val = safe_float(r.get('Discount %'))
+                row.insert(7, Paragraph(f"{discount_val}%", styleN))
+                
+            product_table_data.append(row)
 
-        product_table = Table(product_table_data, colWidths=[30, 100, 150, 60, 200, 30, 60, 60])
+        # Column widths (adjust based on whether discounts exist)
+        col_widths = [30, 100, 150, 60, 200, 30, 60, 60]
+        if has_discounts:
+            col_widths.insert(7, 50)  # Width for discount column
+            
+        product_table = Table(product_table_data, colWidths=col_widths)
         product_table.setStyle(TableStyle([
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 12),
@@ -345,7 +411,7 @@ def generate_pdf_from_data(items, total, company_details, hdr_path="q2.png", ftr
         elems.append(product_table)
 
         # === Summary Section with Conditional Discount ===
-        subtotal = sum(float(r.get('Price per item', 0)) * float(r.get('Quantity', 1)) for r in items)
+        subtotal = sum(float(r.get('Price per item', 0)) * float(r.get('Quantity', 1)) for r in data)
         total_after_discount = total
         discount_amount = subtotal - total_after_discount
         vat = total_after_discount * 0.15
@@ -447,7 +513,29 @@ else:
                 if st.button(f"📄 Regenerate PDF", key=f"regen_{idx}_{quote_hash}"):
                     with st.spinner("Rebuilding PDF..."):
                         try:
-                            temp_details = quote.get("company_details") or st.session_state.company_details
+                            temp_details = quote.get("company_details") or {
+                                "company_name": quote["company_name"],
+                                "contact_person": quote.get("contact_person", ""),
+                                "contact_email": "",
+                                "contact_phone": "",
+                                "address": "",
+                                "prepared_by": st.session_state.username,
+                                "prepared_by_email": st.session_state.user_email,
+                                "current_date": datetime.now().strftime("%A, %B %d, %Y"),
+                                "valid_till": (datetime.now() + timedelta(days=10)).strftime("%A, %B %d, %Y"),
+                                "quotation_validity": "30 days",
+                                "warranty": "1 year",
+                                "down_payment": 50.0,
+                                "delivery": "Expected in 3–4 weeks",
+                                "vat_note": "Prices exclude 14% VAT",
+                                "shipping_note": "Shipping & Installation fees to be added",
+                                "bank": "CIB",
+                                "iban": "EG340010015100000100049865966",
+                                "account_number": "100049865966",
+                                "company": "FlakeTech for Trading Company",
+                                "tax_id": "626180228",
+                                "reg_no": "15971"
+                            }
                             pdf_file = generate_pdf_from_data(quote["items"], quote["total"], temp_details)
                             if pdf_file:
                                 with open(pdf_file, "rb") as f:
@@ -465,40 +553,15 @@ else:
             with col2:
                 if st.button("🗑️ Delete", key=f"del_{idx}_{quote['hash']}"):
                     if st.session_state.get(f"confirm_delete_{idx}"):
-                        # Confirm and delete from both session and Google Sheet
-                        try:
-                            # 🔍 Get the history sheet
+                        if delete_history_record(quote["hash"]):
+                            # Refresh history after successful deletion
                             history_sheet = get_history_sheet()
-                            if history_sheet is None:
-                                st.error("❌ Cannot connect to Google Sheet.")
-                            else:
-                                # Load all data from sheet
-                                df = get_as_dataframe(history_sheet)
-                                df.dropna(how='all', inplace=True)
-
-                                # Find row where Quotation Hash matches
-                                matching_rows = df[df["Quotation Hash"] == quote["hash"]]
-
-                                if len(matching_rows) == 0:
-                                    st.warning("⚠️ This quotation was not found in the Google Sheet.")
-                                else:
-                                    # Get the first matching row index (Google Sheets is 1-indexed, +2 for header and 0-index)
-                                    row_index = matching_rows.index[0] + 2  # +2 because: 0-index + 1 header row
-                                    history_sheet.delete_rows(int(row_index))
-                                    st.success("🗑️ Quotation deleted from Google Sheet!")
-
-                            # ✅ Remove from session state
-                            # Calculate the actual index in the original history list
-                            original_idx = len(st.session_state.history) - 1 - idx
-                            st.session_state.history.pop(original_idx)
-                            st.success("🗑️ Quotation deleted from session!")
-
-                            # 🔄 Optional: Refresh history to stay in sync
-                            time.sleep(1)
-                            st.rerun()
-
-                        except Exception as e:
-                            st.error(f"❌ Failed to delete from Google Sheet: {e}")
+                            if history_sheet:
+                                st.session_state.history = load_user_history_from_sheet(
+                                    st.session_state.user_email, 
+                                    history_sheet
+                                )
+                        st.rerun()
                     else:
                         st.session_state[f"confirm_delete_{idx}"] = True
                         st.warning("⚠️ Press 'Delete' again to confirm.")
@@ -518,7 +581,7 @@ else:
                         "prepared_by": st.session_state.username,
                         "prepared_by_email": st.session_state.user_email,
                         "current_date": datetime.now().strftime("%A, %B %d, %Y"),
-                        "valid_till": (datetime.now() + pd.Timedelta(days=10)).strftime("%A, %B %d, %Y"),
+                        "valid_till": (datetime.now() + timedelta(days=10)).strftime("%A, %B %d, %Y"),
                         "quotation_validity": "30 days",
                         "warranty": "1 year",
                         "down_payment": 50.0,
