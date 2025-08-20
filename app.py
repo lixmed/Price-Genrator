@@ -1186,6 +1186,8 @@ if ((st.session_state.role == "buyer") or
     # Initialize discount edits session state if not exists
     if 'discount_edits' not in st.session_state:
         st.session_state.discount_edits = {}
+if 'description_edits' not in st.session_state:
+        st.session_state.description_edits = {}
 
     products = df['Item Name'].tolist()
     price_map = dict(zip(df['Item Name'], df['Selling Price']))
@@ -1196,8 +1198,8 @@ if ((st.session_state.role == "buyer") or
     Warranty_map = dict(zip(df['Item Name'], df.get('CF.Warranty', '')))
     SKU_map = dict(zip(df['Item Name'], df.get('SKU', '')))
 
-    cols = st.columns([3.0, 1.8, 1.4, 2.5, 2.0, 2.0, 2.0, 2.0, 0.8])
-    headers = ["Product", "SKU", "Warranty", "Image", "Price per 1", "Quantity", "Discount %", "Total", "Clear"]
+    cols = st.columns([3.0, 3.0, 1.8, 1.4, 2.5, 2.0, 2.0, 2.0, 2.0, 0.8])
+    headers = ["Product", "Description", "SKU", "Warranty", "Image", "Price per 1", "Quantity", "Discount %", "Total", "Clear"]
     for i, header in enumerate(headers):
         cols[i].markdown(f"**{header}**")
 
@@ -1205,9 +1207,10 @@ if ((st.session_state.role == "buyer") or
     total_sum = 0
     checkDiscount = False
     basePrice = 0.0
-
     for idx in st.session_state.row_indices:
-        c1, c2, c3, c4, c5, c6, c7, c8, c9 = st.columns([3.0, 1.8, 1.4, 2.5, 2.0, 2.0, 2.0, 2.0, 0.8])
+        # Update column definition to include description
+        c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 = st.columns([3.0, 3.0, 1.8, 1.4, 2.5, 2.0, 2.0, 2.0, 2.0, 0.8])
+        
         prod_key = f"prod_{idx}"
         if prod_key not in st.session_state.selected_products:
             st.session_state.selected_products[prod_key] = "-- Select --"
@@ -1215,8 +1218,8 @@ if ((st.session_state.role == "buyer") or
         prod = c1.selectbox("", ["-- Select --"] + products, key=prod_key, label_visibility="collapsed",
                             index=products.index(current_selection) + 1 if current_selection in products else 0)
         st.session_state.selected_products[prod_key] = prod
-
-        if c9.button("X", key=f"clear_{idx}"):
+        
+        if c10.button("X", key=f"clear_{idx}"):
             st.session_state.row_indices.remove(idx)
             st.session_state.selected_products.pop(prod_key, None)
             # Clear price edits for this product
@@ -1224,18 +1227,32 @@ if ((st.session_state.role == "buyer") or
                 del st.session_state.price_edits[prod]
             if prod in st.session_state.discount_edits:
                 del st.session_state.discount_edits[prod]
+            # Clear description edits for this product
+            if prod in st.session_state.description_edits:
+                del st.session_state.description_edits[prod]
             st.rerun()
-
+        
         if prod != "-- Select --":
+            # Initialize description edit for this product if not exists
+            if prod not in st.session_state.description_edits:
+                st.session_state.description_edits[prod] = desc_map.get(prod, "")
+            
+            # Description (editable)
+            description = c2.text_area("", 
+                            value=st.session_state.description_edits[prod], 
+                            key=f"desc_{idx}",
+                            label_visibility="collapsed",
+                            height=60)
+            # Update session state with new description
+            st.session_state.description_edits[prod] = description
+            
             # Get original price from map
             original_price = price_map[prod]
-            
             # Initialize price edit for this product if not exists
             if prod not in st.session_state.price_edits:
                 st.session_state.price_edits[prod] = original_price
-            
             # Price per item (editable)
-            edited_price = c5.number_input(
+            edited_price = c6.number_input(
                 "", 
                 min_value=0.0, 
                 value=float(st.session_state.price_edits[prod]), 
@@ -1243,39 +1260,32 @@ if ((st.session_state.role == "buyer") or
                 key=f"price_{idx}",
                 label_visibility="collapsed"
             )
-            
             # Update session state with new price
             st.session_state.price_edits[prod] = edited_price
-            
             # Quantity
-            qty = c6.number_input("", min_value=1, value=1, step=1, key=f"qty_{idx}", label_visibility="collapsed")
-            
+            qty = c7.number_input("", min_value=1, value=1, step=1, key=f"qty_{idx}", label_visibility="collapsed")
             # Discount (editable)
-            discount = c7.number_input("", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"disc_{idx}", label_visibility="collapsed")
+            discount = c8.number_input("", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"disc_{idx}", label_visibility="collapsed")
             valid_discount = 0.0 if discount > 20 else discount
             if discount > 20:
                 st.warning(f"⚠ Max 20% discount allowed for '{prod}'. Ignoring discount.")
             if valid_discount > 0:
                 checkDiscount = True
-            
             # Calculate with edited price
             basePrice += edited_price * qty
             discounted_price = edited_price * (1 - valid_discount / 100)
             line_total = discounted_price * qty
-            
             # Display image
             image_url = image_map.get(prod, "")
-            display_product_image(c4, prod, image_url)
-            
+            display_product_image(c5, prod, image_url)
             # Display totals
-            c8.write(f"{line_total:.2f} EGP")
-            c2.write(f"{SKU_map.get(prod, 'N/A')}")
-            c3.write(f"{Warranty_map.get(prod, 'N/A')}")
-            
+            c9.write(f"{line_total:.2f} EGP")
+            c3.write(f"{SKU_map.get(prod, 'N/A')}")
+            c4.write(f"{Warranty_map.get(prod, 'N/A')}")
             # Add to output data
             output_data.append({
                 "Item": prod,
-                "Description": desc_map.get(prod, ""),
+                "Description": description,  # Use edited description
                 "Color": color_map.get(prod, ""),
                 "Dimensions": dim_map.get(prod, ""),
                 "Image": convert_google_drive_url_for_display(image_url) if image_url else "",
@@ -1288,7 +1298,7 @@ if ((st.session_state.role == "buyer") or
             })
             total_sum += line_total
         else:
-            for col in [c2, c3, c4, c5, c6, c7, c8]:
+            for col in [c2, c3, c4, c5, c6, c7, c8, c9]:
                 col.write("—")
 
     if st.button("➕ Add Product"):
@@ -1895,6 +1905,7 @@ if output_data and 'pdf_data' in st.session_state:
                 st.success(f"✅ Saved to Zoho CRM! Record ID: {result['record_id']}")
             else:
                 st.error(f"❌ Failed to save: {result['error']}")
+
 
 
 
