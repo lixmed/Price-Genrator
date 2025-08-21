@@ -2153,7 +2153,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 vat_rate = company_details.get("vat_rate", 0.14)
                 shipping_fee = float(company_details.get("shipping_fee", 0.0))
                 installation_fee = float(company_details.get("installation_fee", 0.0))
-                vat = total_after_discount * vat_rate
+                vat = (shipping_fee+total_after_discount) * vat_rate
                 grand_total = total_after_discount + shipping_fee + installation_fee + vat
 
                 summary_data = [["Total", f"{subtotal_before:.2f} EGP"]]
@@ -2343,3 +2343,4 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
+
