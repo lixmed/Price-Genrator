@@ -123,28 +123,6 @@ def generate_temp_password(length=12):
     temp_password = ''.join(random.choice(characters) for _ in range(length))
     return temp_password
 
-
-# st.write("🔍 DEBUG: Checking secrets configuration...")
-# try:
-#     # Check if SMTP section exists
-#     if "smtp" in st.secrets:
-#         st.write("✅ SMTP section found in secrets")
-#         # Check individual SMTP values
-#         st.write(f"SMTP server: {st.secrets['smtp'].get('server', 'NOT FOUND')}")
-#         st.write(f"SMTP port: {st.secrets['smtp'].get('port', 'NOT FOUND')}")
-#         st.write(f"SMTP username: {st.secrets['smtp'].get('username', 'NOT FOUND')}")
-#         st.write(f"SMTP from_email: {st.secrets['smtp'].get('from_email', 'NOT FOUND')}")
-#     else:
-#         st.error("❌ SMTP section NOT FOUND in secrets")
-    
-#     # Check if entire secrets dictionary is empty
-#     if not st.secrets:
-#         st.error("❌ st.secrets is completely empty!")
-    
-# except Exception as e:
-#     st.error(f"❌ Error checking secrets: {str(e)}")
-
-
 def send_password_reset_email(user_email, new_password):
     """Send new password to user's email"""
     try:
@@ -1848,9 +1826,11 @@ def download_image_for_pdf(url, max_size=(300, 300)):
         return None
 
 @st.cache_data
-def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png"):
+def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png", 
+                    intro_path="Screenshot 2025-08-21 134349.png", closure_path="Screenshot 2025-08-20 152142.png",
+                    bg_path="FT Quotation Temp[1](1).jpg"):
     # This inner function does the actual PDF building
-    def build_pdf(data, total, company_details, hdr_path, ftr_path):
+    def build_pdf(data, total, company_details, hdr_path, ftr_path, intro_path, closure_path, bg_path):
         # Create temp file
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
         pdf_path = tmp.name
@@ -1859,9 +1839,9 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         doc = SimpleDocTemplate(
             pdf_path,
             pagesize=A3,
-            topMargin=230,
-            leftMargin=40,
-            rightMargin=40,
+            topMargin=100,
+            leftMargin=70,
+            rightMargin=1,
             bottomMargin=250
         )
         styles = getSampleStyleSheet()
@@ -1874,29 +1854,47 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             parent=styles['Normal'],
             alignment=0,
             spaceBefore=12,
-            spaceAfter=12
+            spaceAfter=12,
+            leftIndent=30  # Moves content slightly to the right
         )
+
+        # Track page numbers for cover and closure
+        cover_page = 1
+        closure_page_num = None
 
         def header_footer(canvas, doc):
             canvas.saveState()
-            if hdr_path and os.path.exists(hdr_path):
-                img = PILImage.open(hdr_path)
-                w, h = img.size
-                img_w = doc.width + doc.leftMargin + doc.rightMargin
-                img_h = img_w * (h / w)
-                canvas.drawImage(hdr_path, 0, A3[1] - img_h + 10, width=img_w, height=img_h)
-            footer_height = 0
-            if ftr_path and os.path.exists(ftr_path):
-                img2 = PILImage.open(ftr_path)
-                w2, h2 = img2.size
-                img_w2 = doc.width + doc.leftMargin + doc.rightMargin
-                img_h2 = img_w2 * (h2 / w2)
-                canvas.drawImage(ftr_path, 0, 1, width=img_w2, height=img_h2)
-                footer_height = img_h2
-            canvas.setFont('Helvetica', 10)
             page_num = canvas.getPageNumber()
-            canvas.drawRightString(doc.width + doc.leftMargin, footer_height + 10, str(page_num))
+            
+            # Draw full-page cover image on first page
+            if page_num == cover_page and intro_path and os.path.exists(intro_path):
+                canvas.drawImage(intro_path, 0, 0, width=A3[0], height=A3[1])
+                canvas.restoreState()
+                return
+            
+            # Draw full-page closure image on last page
+            if closure_page_num and page_num == closure_page_num and closure_path and os.path.exists(closure_path):
+                canvas.drawImage(closure_path, 0, 0, width=A3[0], height=A3[1])
+                canvas.restoreState()
+                return
+            
+            # Draw background image on middle pages
+            if bg_path and os.path.exists(bg_path) and page_num != cover_page and (not closure_page_num or page_num < closure_page_num):
+                canvas.drawImage(bg_path, 0, 0, width=A3[0], height=A3[1], preserveAspectRatio=True, mask='auto')
+            
+            # ADD PAGE NUMBERING FOR MIDDLE PAGES HERE
+            if page_num != cover_page and (not closure_page_num or page_num < closure_page_num):
+                canvas.setFont('Helvetica', 10)
+                # Position at bottom right, 40 points from bottom
+                canvas.drawRightString(doc.width + doc.leftMargin, 40, str(page_num - 1))
+            
             canvas.restoreState()
+
+        # === Cover Page (placeholder for canvas drawing) ===
+        if intro_path and os.path.exists(intro_path):
+            # Add minimal content to create the first page
+            elems.append(Spacer(1, 50))
+            elems.append(PageBreak())
 
         # === Company Details ===
         detail_lines = [
@@ -1948,8 +1946,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         </font>
         </para>
         """
-        elems.append(Paragraph(payment_info, aligned_style))
-        elems.append(Spacer(1, 90))
+        elems.append(Paragraph(payment_info, aligned_style)) # Reduced from 90 to 20 for less space
         elems.append(PageBreak())
 
         # === Table Setup ===
@@ -2048,9 +2045,16 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             ('TOPPADDING', (0, 0), (-1, -1), 6),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ]))
+        
+        # RIGHT-ALIGN THE TABLE TO START FROM THE RIGHT EDGE OF THE PAGE
+        table.hAlign = 'RIGHT'
+        
+        # Add the product table to the document
         elems.append(table)
 
-        # === Summary Table (Match item table width) ===
+        # Add a small spacer (5 points) to create minimal space between tables
+        # elems.append(Spacer(1, 5))
+
         # === Summary Table (Match item table width) ===
         subtotal = sum(float(r.get('Price per item', 0)) * float(r.get('Quantity', 1)) for r in data_from_hash)
         total_after_discount = total
@@ -2096,7 +2100,17 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
             ('TEXTCOLOR', (1, 1), (1, 1), colors.red) if discount_amount > 0 else ('TEXTCOLOR', (1, 1), (1, 1), colors.black),
         ]))
+        # RIGHT-ALIGN THE SUMMARY TABLE TO MATCH THE PRODUCT TABLE
+        summary_table.hAlign = 'RIGHT'
         elems.append(summary_table)
+
+        # === Closure Page (placeholder for canvas drawing) ===
+        if closure_path and os.path.exists(closure_path):
+            elems.append(PageBreak())
+            elems.append(Spacer(1, 50))  # Minimal content to create the page
+            
+            # Calculate closure page number (cover=1, content pages, then closure)
+            closure_page_num = 2 + len([e for e in elems if isinstance(e, PageBreak)]) - 1
 
         # Build PDF
         try:
@@ -2117,8 +2131,8 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
     st.session_state.pdf_data = st.session_state.get('pdf_data', [])
 
     # ✅ Pass the actual data (not [])
-    return build_pdf(st.session_state.pdf_data, total, company_details, hdr_path, ftr_path)
-    
+    return build_pdf(st.session_state.pdf_data, total, company_details, hdr_path, ftr_path, 
+                    intro_path, closure_path, bg_path)
 # ========== Generate PDF & Save to History ==========
 
 
@@ -2233,5 +2247,3 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
-
-
