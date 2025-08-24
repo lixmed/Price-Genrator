@@ -767,6 +767,7 @@ if st.session_state.role == "admin":
                     new_desc = st.text_area("Material / Description")
                     new_color = st.text_input("Color")
                     new_dim = st.text_input("Dimensions (Optional)")
+                    # Warranty field is correctly implemented here
                     new_warranty = st.text_input("Warranty (e.g., 1 year)", help="Enter warranty information")
                     new_image = st.text_input("Image URL (Optional)", help="Paste Google Drive link or direct image URL")
                     
@@ -781,14 +782,14 @@ if st.session_state.role == "admin":
                             # Convert image URL if provided
                             converted_image_url = convert_google_drive_url_for_storage(new_image) if new_image else ""
                             
-                            # Create new row
+                            # Create new row with correct CF.Warranty mapping
                             new_row = {
                                 "Item Name": new_item.strip(),
                                 "Selling Price": new_price,
                                 "Sales Description": new_desc,
                                 "CF.Colors": new_color,
                                 "CF.Dimensions": new_dim,
-                                "CF.Warranty": new_warranty,
+                                "CF.Warranty": new_warranty,  # Correctly mapped to sheet column
                                 "CF.image url": converted_image_url
                             }
                             
@@ -815,7 +816,7 @@ if st.session_state.role == "admin":
                 st.markdown("• Direct image URLs (.jpg, .png, etc.)")
                 st.markdown("• Google Drive shared links")
                 st.markdown("**Example:**")
-                st.code("https://drive.google.com/file/d/1vN8l2FX.../view", language="text")
+                st.code("https://drive.google.com/file/d/1vN8l2FX.../view    ", language="text")
         
 
         with tab2:
@@ -1808,7 +1809,7 @@ if ((st.session_state.role == "buyer") or
             st.markdown(f"🔧 **Installation Fee:** {installation_fee:.2f} EGP")
 
     # ====== VAT CALCULATION ======
-    vat_rate = company_details.get("vat_rate", 0.14)
+    vat_rate = company_details.get("vat_rate", 0.14) 
     vat = (final_total + shipping_fee) * vat_rate
     grand_total = final_total + shipping_fee + installation_fee + vat
 
@@ -2379,5 +2380,3 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
-
-
