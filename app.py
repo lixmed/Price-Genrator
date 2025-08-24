@@ -316,7 +316,7 @@ def load_users_from_sheet():
 
             # Skip if required fields are missing
             if not email or not password or not role:
-                st.warning(f"⚠️ Skipping incomplete user row: {row}")
+                # st.warning(f"⚠️ Skipping incomplete user row: {row}")
                 continue
 
             if "@" not in email:
@@ -2380,3 +2380,4 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
+
