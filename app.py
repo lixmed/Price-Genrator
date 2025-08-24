@@ -668,12 +668,12 @@ if not st.session_state.logged_in:
                     st.error("❌ Failed to update password in database. Please contact admin.")
         
         # Add some information about the system
-        with st.expander("ℹ️ System Information"):
-            st.markdown("""
-            - This system is for authorized users only
-            - Your credentials are stored securely
-            - Contact admin if you need assistance
-            """)
+        # with st.expander("ℹ️ System Information"):
+        #     st.markdown("""
+        #     - This system is for authorized users only
+        #     - Your credentials are stored securely
+        #     - Contact admin if you need assistance
+        #     """)
     
     st.stop()
 # ========== Logout & History Sidebar ==========
@@ -2380,4 +2380,5 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
+
 
