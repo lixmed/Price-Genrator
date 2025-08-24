@@ -1808,7 +1808,7 @@ if ((st.session_state.role == "buyer") or
             st.markdown(f"🔧 **Installation Fee:** {installation_fee:.2f} EGP")
 
     # ====== VAT CALCULATION ======
-    vat_rate = 0.14  # 14% VAT
+    vat_rate = company_details.get("vat_rate", 0.14)
     vat = (final_total + shipping_fee) * vat_rate
     grand_total = final_total + shipping_fee + installation_fee + vat
 
@@ -2379,3 +2379,4 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
+
