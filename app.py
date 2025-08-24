@@ -119,7 +119,6 @@ def fetch_zoho_accounts():
 
 
 def generate_temp_password(length=12):
-    """Generate a secure temporary password with letters, digits and special characters"""
     characters = string.ascii_letters + string.digits + "!@#$%^&*"
     temp_password = ''.join(random.choice(characters) for _ in range(length))
     return temp_password
@@ -1732,7 +1731,8 @@ if ((st.session_state.role == "buyer") or
         })
         total_sum += line_total
 
-    st.markdown("---")
+        st.markdown("---")
+    # Initialize final_total to total_sum FIRST, before any conditional logic
     final_total = total_sum
 
     if not checkDiscount:
@@ -1741,26 +1741,39 @@ if ((st.session_state.role == "buyer") or
             if st.button("🚀 Request AI Approval for High Discount"):
                 with st.spinner("📡 Connecting to HQ AI Negotiator..."):
                     time.sleep(1.2)
-                st.info("🔍 Analyzing market trends in real-time...")
-                time.sleep(1)
-                st.info("🌐 Negotiating with supplier AIs in Shenzhen...")
-                time.sleep(1)
-                st.info("🌕 Adjusting for moon phase impact on wood prices...")
-                time.sleep(1)
-                st.success("✅ AI Negotiator Approved: 17.3% Discount Activated!")
-                st.balloons()
-                final_total = total_sum * (1 - 17.3 / 100)
+                    st.info("🔍 Analyzing market trends in real-time...")
+                    time.sleep(1)
+                    st.info("🌐 Negotiating with supplier AIs in Shenzhen...")
+                    time.sleep(1)
+                    st.info("🌕 Adjusting for moon phase impact on wood prices...")
+                    time.sleep(1)
+                    st.success("✅ AI Negotiator Approved: 17.3% Discount Activated!")
+                    st.balloons()
+                    final_total = total_sum * (1 - 17.3 / 100)
+                    approved_overall_discount = 17.3
+                st.markdown(f"📉 **Overall Discount Amount:** {total_sum * (approved_overall_discount/100):.2f} EGP ({approved_overall_discount:.1f}%)")
             else:
                 st.warning("💡 Try clicking 'Request AI Approval' for discounts over 15%!")
         else:
-            final_total = total_sum * (1 - overall_discount / 100)
+            if overall_discount > 0:
+                final_total = total_sum * (1 - overall_discount / 100)
+                st.markdown(f"📉 **Overall Discount Amount:** {total_sum * (overall_discount/100):.2f} EGP ({overall_discount:.1f}%)")
         
-        st.markdown(f"💰 *Total Before Discount: {total_sum:.2f} EGP")
-        if overall_discount > 0:
-            st.markdown(f"🔻 *Discount Applied: {overall_discount:.1f}%")
-        st.markdown(f"🧾 *Final Total: {final_total:.2f} EGP")
+        if overall_discount > 0 and overall_discount <= 15.0:
+            st.markdown(f"🧾 **Final Total:** {final_total:.2f} EGP")
+        elif 'approved_overall_discount' in locals():
+            st.markdown(f"🧾 **Final Total:** {final_total:.2f} EGP")
+        else:
+            st.markdown(f"🧾 **Final Total:** {final_total:.2f} EGP")
     else:
-        st.markdown("⚠ You cannot add overall discount when individual discounts are applied")
+        # Calculate total discount amount from item-level discounts
+        total_discount_amount = basePrice - total_sum
+        
+        st.markdown("### 📊 Discount Summary (Item-Level)")
+        st.markdown(f"💰 **Total Before Discount:** {basePrice:.2f} EGP")
+        st.markdown(f"📉 **Total Discount Amount:** {total_discount_amount:.2f} EGP ({(total_discount_amount/basePrice*100):.1f}%)")
+        st.markdown(f"🧾 **Subtotal After Discounts:** {final_total:.2f} EGP")
+        st.warning("⚠ You cannot add an overall discount when individual product discounts are already applied")
 
     # ====== SHIPPING AND INSTALLATION FEE FIELDS ======
     st.markdown("### 🚚 Additional Fees")
@@ -1783,20 +1796,30 @@ if ((st.session_state.role == "buyer") or
     st.session_state.shipping_fee = shipping_fee
     st.session_state.installation_fee = installation_fee
 
-    # Calculate total with additional fees
+    # Calculate total with additional fees - final_total is now guaranteed to be defined
     total_with_fees = final_total + shipping_fee + installation_fee
 
     # Display the additional fees in the summary if they're not zero
     if shipping_fee > 0 or installation_fee > 0:
         st.markdown("---")
         if shipping_fee > 0:
-            st.markdown(f"🚚 *Shipping Fee: {shipping_fee:.2f} EGP*")
+            st.markdown(f"🚚 **Shipping Fee:** {shipping_fee:.2f} EGP")
         if installation_fee > 0:
-            st.markdown(f"🔧 *Installation Fee: {installation_fee:.2f} EGP*")
-        st.markdown(f"🧾 **Total with Additional Fees: {total_with_fees:.2f} EGP**")
+            st.markdown(f"🔧 **Installation Fee:** {installation_fee:.2f} EGP")
 
-    st.markdown("---")
-    st.markdown(f"### 💰 Grand Total: {total_with_fees:.2f} EGP")
+    # ====== VAT CALCULATION ======
+    vat_rate = 0.14  # 14% VAT
+    vat = (final_total + shipping_fee) * vat_rate
+    grand_total = final_total + shipping_fee + installation_fee + vat
+
+    st.markdown("### 📊 Final Calculation")
+    st.markdown(f"💰 **Subtotal:** {final_total:.2f} EGP")
+    if shipping_fee > 0:
+        st.markdown(f"📦 **Shipping Fee:** {shipping_fee:.2f} EGP")
+    if installation_fee > 0:
+        st.markdown(f"🔧 **Installation Fee:** {installation_fee:.2f} EGP")
+    st.markdown(f" taxpound **VAT ({vat_rate*100:.0f}%):** {vat:.2f} EGP")
+    st.markdown(f"💵 **GRAND TOTAL:** {grand_total:.2f} EGP")
     
     if output_data:
         st.dataframe(pd.DataFrame(output_data), use_container_width=True)
@@ -1828,7 +1851,7 @@ def download_image_for_pdf(url, max_size=(300, 300)):
 
 @st.cache_data
 def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png", 
-                    intro_path="Screenshot 2025-08-21 134349.png", closure_path="Screenshot 2025-08-20 152142.png",
+                    intro_path="FT-Quotation-Temp-financial.jpg", closure_path="FT-Quotation-Temp-2.jpg",
                     bg_path="FT Quotation Temp[1](1).jpg"):
     
     def build_pdf(data, total, company_details, hdr_path, ftr_path, intro_path, closure_path, bg_path):
@@ -1977,14 +2000,15 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             unit_price = float(r.get('Price per item', 0))
             qty = float(r.get('Quantity', 1))
             disc_pct = float(r.get('Discount %', 0))
-            if disc_pct > 0:
-                price_before = unit_price / (1 - disc_pct / 100)
-            else:
-                price_before = unit_price
-            subtotal_before += price_before * qty
-            subtotal_after += unit_price * qty
+            discounted_price = unit_price * (1 - disc_pct / 100)
+            subtotal_before += unit_price * qty
+            subtotal_after += discounted_price * qty
 
         discount_amount = subtotal_before - subtotal_after
+
+        # Calculate overall discount if applicable
+        overall_disc_amount = max(subtotal_after - total, 0.0) if abs(subtotal_after - total) > 0.01 else 0.0
+        total_after_discount = total if overall_disc_amount > 0 else subtotal_after
 
         # === Headers ===
         base_headers = ["Ser.", "Item", "Image", "SKU", "Specs", "QTY", "Before Disc.", "Net Price", "Total"]
@@ -2041,10 +2065,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
 
             unit_price = float(r.get('Price per item', 0))
             disc_pct = float(r.get('Discount %', 0))
-            if disc_pct > 0:
-                price_before_discount = unit_price / (1 - disc_pct / 100)
-            else:
-                price_before_discount = unit_price
+            net_price = unit_price * (1 - disc_pct / 100)
 
             # Truncate item name if too long
             item_name = safe_str(r.get('Item'))
@@ -2058,8 +2079,8 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 Paragraph(safe_str(r.get('SKU')).upper(), styleN),
                 details_para,
                 Paragraph(safe_str(r.get('Quantity')), styleN),
-                Paragraph(f"{price_before_discount:.2f}", styleN),
                 Paragraph(f"{unit_price:.2f}", styleN),
+                Paragraph(f"{net_price:.2f}", styleN),
             ]
 
             if has_discounts:
@@ -2149,18 +2170,23 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             # Add summary table only to the last chunk
             if is_last_chunk:
                 # === Summary Table (on the same page as last product chunk) ===
-                total_after_discount = subtotal_after
                 vat_rate = company_details.get("vat_rate", 0.14)
                 shipping_fee = float(company_details.get("shipping_fee", 0.0))
                 installation_fee = float(company_details.get("installation_fee", 0.0))
-                vat = (shipping_fee+total_after_discount) * vat_rate
+                vat = (shipping_fee + total_after_discount) * vat_rate
                 grand_total = total_after_discount + shipping_fee + installation_fee + vat
 
-                summary_data = [["Total", f"{subtotal_before:.2f} EGP"]]
-                if discount_amount > 0:
-                    summary_data.append(["Special Discount", f"- {discount_amount:.2f} EGP"])
-
-                summary_data.append(["Total After Discount", f"{total_after_discount:.2f} EGP"])
+                summary_data = []
+                has_any_discount = (discount_amount > 0 or overall_disc_amount > 0)
+                if has_any_discount:
+                    summary_data.append(["Subtotal Before Discounts", f"{subtotal_before:.2f} EGP"])
+                    if discount_amount > 0:
+                        summary_data.append(["Special Discount", f"- {discount_amount:.2f} EGP"])
+                    if overall_disc_amount > 0:
+                        summary_data.append(["Overall Discount", f"- {overall_disc_amount:.2f} EGP"])
+                    summary_data.append(["Total After Discounts", f"{total_after_discount:.2f} EGP"])
+                else:
+                    summary_data.append(["Total", f"{total_after_discount:.2f} EGP"])
 
                 if shipping_fee > 0:
                     summary_data.append(["Shipping Fee", f"{shipping_fee:.2f} EGP"])
@@ -2170,9 +2196,14 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 summary_data.append([f"VAT ({int(vat_rate * 100)}%)", f"{vat:.2f} EGP"])
                 summary_data.append(["Grand Total", f"{grand_total:.2f} EGP"])
 
+                # Collect discount row indices for styling
+                discount_row_indices = [i for i, row in enumerate(summary_data) if "Discount" in row[0]]
+
                 summary_col_widths = [total_table_width - 150, 150]
                 summary_table = Table(summary_data, colWidths=summary_col_widths)
-                summary_table.setStyle(TableStyle([
+
+                # Base styles
+                summary_styles = [
                     ('ALIGN', (0, 0), (0, -1), 'LEFT'),
                     ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
                     ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
@@ -2180,8 +2211,13 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                     ('FONTSIZE', (0, 0), (-1, -1), 12),
                     ('GRID', (0, 0), (-1, -1), 1.0, colors.black),
                     ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
-                    ('TEXTCOLOR', (1, 1), (1, 1), colors.red) if discount_amount > 0 else ('TEXTCOLOR', (1, 1), (1, 1), colors.black),
-                ]))
+                ]
+
+                # Add red text for discount amounts
+                for row_idx in discount_row_indices:
+                    summary_styles.append(('TEXTCOLOR', (1, row_idx), (1, row_idx), colors.black))
+
+                summary_table.setStyle(TableStyle(summary_styles))
 
                 # Add summary table with NO TOP PADDING - CRITICAL CHANGE
                 outer_summary_data = [[summary_table]]
@@ -2343,4 +2379,3 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
-
