@@ -2031,7 +2031,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             img_element = "No Image"
             if r.get("Image"):
                 download_url = convert_google_drive_url_for_storage(r["Image"])
-                temp_img_path = download_image_for_pdf(download_url, max_size=(90, 70))  # Optimized size
+                temp_img_path = download_image_for_pdf(download_url, max_size=(300, 300))  # Optimized size
                 if temp_img_path:
                     try:
                         img = RLImage(temp_img_path)
@@ -2379,4 +2379,5 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
+
 
