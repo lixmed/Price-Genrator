@@ -20,6 +20,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from reportlab.platypus import KeepInFrame
+import json
 
 # ========== Page Config ==========
 st.set_page_config(page_title="Quotation Builder", page_icon="🪑", layout="wide")
@@ -412,6 +413,67 @@ def convert_google_drive_url_for_storage(url):
         file_id = match.group(1)
         return f"https://drive.google.com/uc?export=download&id={file_id}"
     return url
+
+def get_zoho_user_id(email):
+    token = get_zoho_access_token()
+    url = f"{st.secrets['zoho']['crm_api_domain']}/crm/v2/users"
+    headers = {"Authorization": f"Zoho-oauthtoken {token}"}
+    params = {"email": email}
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        users = response.json().get("users", [])
+        return users[0]["id"] if users else None
+    return None
+
+def get_zoho_account_id(name):
+    token = get_zoho_access_token()
+    url = f"{st.secrets['zoho']['crm_api_domain']}/crm/v2/Accounts"
+    headers = {"Authorization": f"Zoho-oauthtoken {token}"}
+    params = {"criteria": f"Account_Name:equals:{name}"}
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        data = response.json().get("data", [])
+        return data[0]["id"] if data else None
+    return None
+
+def get_zoho_product_id(sku):
+    """
+    ابحث عن منتج في Zoho CRM باستخدام الـ SKU (Product_Code)
+    """
+    if not sku or str(sku).strip() == "" or str(sku).lower() == "n/a":
+        return None
+
+    try:
+        sku_str = str(sku).strip()
+        token = get_zoho_access_token()
+        if not token:
+            return None
+
+        url = f"{st.secrets['zoho']['crm_api_domain']}/crm/v2/Products"
+        headers = {"Authorization": f"Zoho-oauthtoken {token}"}
+        
+        # 🔍 ابحث باستخدام Product_Code
+        params = {"criteria": f"Product_Code:equals:{sku_str}"}
+
+        response = requests.get(url, headers=headers, params=params)
+        
+        if response.status_code == 200:
+            data = response.json().get("data", [])
+            if data:
+                product_id = data[0]["id"]
+                product_name = data[0]["Product_Name"]
+                st.write(f"✅ Found product by SKU '{sku_str}': '{product_name}' (ID: {product_id})")
+                return product_id
+            else:
+                st.warning(f"❌ No product found in Zoho CRM with SKU: '{sku_str}'")
+        else:
+            st.error(f"❌ Zoho API Error ({response.status_code}): {response.text}")
+            
+    except Exception as e:
+        st.error(f"❌ Error searching for product by SKU '{sku}': {e}")
+    
+    return None
+
 
 # ========== Google Sheets Connection ==========
 def get_gsheet_connection():
@@ -1138,7 +1200,7 @@ if st.session_state.role == "admin":
             edit_mode = st.session_state.get('edit_mode', False)
             # CRITICAL FIX: Always use company_details from session state if it exists
             existing_data = st.session_state.get('company_details', {})
-            
+
             with st.form(key="admin_company_details_form"):
                 # Company Name field will now get populated from Zoho (Account_Name)
                 company_name = st.text_input("🏢 Company Name", value=existing_data.get("company_name", ""))
@@ -1178,252 +1240,51 @@ if st.session_state.role == "admin":
                 account_number = st.text_input("Account Number", 
                                             value=existing_data.get("account_number", "100049865966"))
                 company = st.text_input("Company", 
-                                    value=existing_data.get("company", "FlakeTech for Trading Company"))
+                                        value=existing_data.get("company", "FlakeTech for Trading Company"))
                 tax_id = st.text_input("Tax ID", value=existing_data.get("tax_id", "626180228"))
                 reg_no = st.text_input("Commercial/Chamber Reg. No", value=existing_data.get("reg_no", "15971"))
                 
                 # Phone validation pattern
                 phone_pattern = r'^\+?\d+$'
                 
-                # System-generated fields
-                prepared_by = st.session_state.username
-                prepared_by_email = st.session_state.user_email
-                current_date = datetime.now().strftime("%A, %B %d, %Y")
-                valid_till = (datetime.now() + timedelta(days=10)).strftime("%A, %B %d, %Y")
-                quotation_validity = "30 days"
-                
-                submit_button_text = "Update Details" if edit_mode else "Submit Details"
-                
-                if st.form_submit_button(submit_button_text):
-                    # Validate phone number
-                    if not re.match(phone_pattern, contact_phone):
-                        st.error("❌ Invalid phone number format. Please use digits only (e.g., +201234567890).")
-                    # Validate required fields
-                    elif not all([company_name, contact_person, contact_phone]):
-                        st.warning("⚠ Please fill in all required fields (Company Name, Contact Person, and Contact Phone).")
+                # --- ZOHO QUOTE OWNER SELECTION ---
+                if st.session_state.role == "admin":
+                    with st.spinner("📡 Loading Zoho CRM users..."):
+                        zoho_users = fetch_zoho_users()
+
+                    if zoho_users:
+                        owner_options = [f"{u['name']} <{u['email']}>" for u in zoho_users]
+                        default_idx = 0
+                        for i, u in enumerate(zoho_users):
+                            if u["email"] == st.session_state.user_email:
+                                default_idx = i
+                                break
+
+                        selected_owner_str = st.selectbox(
+                            "👤 Quote Owner (Sales Rep)",
+                            options=owner_options,
+                            index=default_idx,
+                            help="Select who owns this quotation in Zoho CRM"
+                        )
+                        # Extract selected user
+                        selected_email = selected_owner_str.split("<")[1].strip(">")
+                        selected_user = next(u for u in zoho_users if u["email"] == selected_email)
+                        quote_owner_id = selected_user["id"]
+                        quote_owner_name = selected_user["name"]
+                        quote_owner_email = selected_user["email"]
                     else:
-                        st.session_state.form_submitted = True
-                        st.session_state.company_details = {
-                            "company_name": company_name,
-                            "contact_person": contact_person,
-                            "contact_email": contact_email,
-                            "contact_phone": contact_phone,
-                            "address": address,
-                            "prepared_by": prepared_by,
-                            "prepared_by_email": prepared_by_email,
-                            "current_date": current_date,
-                            "valid_till": valid_till,
-                            "quotation_validity": quotation_validity,
-                            "warranty": warranty,
-                            "down_payment": down_payment,
-                            "delivery": delivery,
-                            "vat_note": vat_note,  # Display version
-                            "vat_rate": selected_vat_rate / 100.0,  # Store as decimal for calculation
-                            "shipping_note": shipping_note,
-                            "bank": bank,
-                            "iban": iban,
-                            "account_number": account_number,
-                            "company": company,
-                            "tax_id": tax_id,
-                            "reg_no": reg_no
-                        }
-                        if 'edit_mode' in st.session_state:
-                            del st.session_state.edit_mode
-                        success_message = "✅ Details updated successfully!" if edit_mode else "✅ Details submitted successfully!"
-                        st.success(success_message)
-                        st.rerun()
-            
-            # Final validation before proceeding
-            if not st.session_state.get('form_submitted', False):
-                st.warning("⚠ Please fill in all company and contact details before proceeding to product selection.")
-                st.stop()
-    # ========== Regular Buyer Panel ==========
-    # ========== Regular Buyer Panel ==========
-elif st.session_state.role == "buyer":
-    st.header("🛍  Buy Products & Get Quotation")
-    
-    # ADD THIS CRITICAL SECTION - Entry point for new quotations
-    if 'quotation_in_progress' not in st.session_state:
-        st.subheader("Get Started with Your Quotation")
-        st.info("Click below to begin creating your quotation")
-        if st.button("📄 Create New Quotation", use_container_width=True, type="primary"):
-            st.session_state.quotation_in_progress = True
-            st.session_state.form_submitted = False
-            st.session_state.edit_mode = False
-            st.rerun()
-    
-    # Only proceed if quotation process has been started
-    if st.session_state.get('quotation_in_progress', False):
-        # Handle post-submission options
-        if st.session_state.get('form_submitted', False):
-            st.subheader("Choose an option:")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("✏️ Edit Company Info", use_container_width=True):
-                    st.session_state.edit_mode = True
-                    st.session_state.form_submitted = False
-                    st.rerun()
-            with col2:
-                if st.button("🆕 Create New Quotation", use_container_width=True):
-                    st.session_state.edit_mode = False
-                    st.session_state.form_submitted = False
-                    st.session_state.quotation_in_progress = True
-                    if 'company_details' in st.session_state:
-                        old_details = st.session_state.company_details
-                        st.session_state.company_details = {
-                            "company_name": "",
-                            "contact_person": "",
-                            "contact_email": "",
-                            "contact_phone": "",
-                            "address": "",
-                            "warranty": old_details.get("warranty", "1 year"),
-                            "down_payment": old_details.get("down_payment", 50.0),
-                            "delivery": old_details.get("delivery", "Expected in 3–4 weeks"),
-                            "vat_note": old_details.get("vat_note", "Prices exclude 14% VAT"),
-                            "shipping_note": old_details.get("shipping_note", "Shipping & Installation fees to be added"),
-                            "bank": old_details.get("bank", "CIB"),
-                            "iban": old_details.get("iban", "EG340010015100000100049865966"),
-                            "account_number": old_details.get("account_number", "100049865966"),
-                            "company": old_details.get("company", "FlakeTech for Trading Company"),
-                            "tax_id": old_details.get("tax_id", "626180228"),
-                            "reg_no": old_details.get("reg_no", "15971"),
-                            "prepared_by": st.session_state.username,
-                            "prepared_by_email": st.session_state.user_email,
-                            "current_date": datetime.now().strftime("%A, %B %d, %Y"),
-                            "valid_till": (datetime.now() + timedelta(days=10)).strftime("%A, %B %d, %Y"),
-                            "quotation_validity": "30 days"
-                        }
-                    st.session_state.cart = []
-                    if 'selected_items' in st.session_state:
-                        st.session_state.selected_items = []
-                    if 'pdf_data' in st.session_state:
-                        st.session_state.pdf_data = []
-                    keys_to_clear = [key for key in st.session_state.keys() if 'selected_' in key or 'item_' in key]
-                    for key in keys_to_clear:
-                        del st.session_state[key]
-                    # Clear Zoho-specific session state
-                    if 'zoho_accounts' in st.session_state:
-                        del st.session_state.zoho_accounts
-                    st.success("🆕 New quotation started - all items cleared!")
-                    st.rerun()
-        
-        # Show company details form if not submitted
-        if not st.session_state.get('form_submitted', False):
-            # Initialize session state for Zoho accounts
-            if 'zoho_accounts' not in st.session_state:
-                st.session_state.zoho_accounts = None
-                
-            # Zoho CRM section - now clearly marked as optional
-            st.subheader("🔗 Fetch from Zoho CRM (Optional)")
-            st.caption("You can fill the form manually or use Zoho CRM data")
-            
-            # Fetch accounts button
-            if st.button("Fetch Accounts from Zoho", use_container_width=True):
-                with st.spinner("📡 Connecting to Zoho CRM..."):
-                    try:
-                        # Fetch ALL required fields
-                        accounts = fetch_zoho_accounts()
-                        if accounts:
-                            st.session_state.zoho_accounts = accounts
-                            st.success(f"✅ Found {len(accounts)} accounts in Zoho CRM")
-                        else:
-                            st.warning("⚠️ No accounts found in Zoho CRM")
-                            st.session_state.zoho_accounts = None
-                    except Exception as e:
-                        st.error(f"❌ Failed to connect to Zoho CRM: {str(e)}")
-                        st.session_state.zoho_accounts = None
-            
-            # Show account selection if accounts were fetched
-            if st.session_state.zoho_accounts:
-                account_names = [acc.get("Account_Name", "") for acc in st.session_state.zoho_accounts if acc.get("Account_Name")]
-                if account_names:
-                    selected_acc = st.selectbox(
-                        "Select Account", 
-                        ["-- Select Account --"] + account_names,
-                        key="zoho_account_select"
-                    )
-                    
-                    # Load selected account button
-                    if selected_acc != "-- Select Account --" and st.button("Load Selected Account", use_container_width=True):
-                        chosen_data = next(acc for acc in st.session_state.zoho_accounts 
-                                        if acc.get("Account_Name") == selected_acc)
-                        
-                        # Extract owner (contact person) safely
-                        owner = chosen_data.get("Owner", {})
-                        contact_person = ""
-                        if isinstance(owner, dict):
-                            contact_person = owner.get("name", "")
-                        elif isinstance(owner, str):
-                            contact_person = owner
-                        
-                        # Extract email
-                        email = ""
-                        if "Email" in chosen_data:
-                            email = chosen_data["Email"]
-                        elif "email" in chosen_data:
-                            email = chosen_data["email"]
-                        
-                        # Auto-fill session_state
-                        st.session_state.company_details = {
-                            "company_name": chosen_data.get("Account_Name", ""),
-                            "contact_person": contact_person,
-                            "contact_email": email,
-                            "contact_phone": chosen_data.get("Phone", ""),
-                            "address": chosen_data.get("Billing_Street", ""),
-                            "tax_id": chosen_data.get("Tax_ID", ""),
-                            "reg_no": chosen_data.get("Registration_No", "")
-                        }
-                        st.success(f"✅ Company details loaded for '{selected_acc}'!")
-                        st.rerun()
+                        st.warning("⚠️ Could not load Zoho users. Using session user.")
+                        quote_owner_id = get_zoho_user_id(st.session_state.user_email)
+                        quote_owner_name = st.session_state.username
+                        quote_owner_email = st.session_state.user_email
                 else:
-                    st.warning("⚠️ No valid account names found in Zoho data")
-                    st.session_state.zoho_accounts = None
-            
-            # ALWAYS SHOW THE FORM (this is the key fix)
-            st.subheader("🏢 Company and Contact Details")
-            edit_mode = st.session_state.get('edit_mode', False)
-            existing_data = st.session_state.get('company_details', {})
-            
-            with st.form(key="buyer_company_details_form"):
-                company_name = st.text_input("🏢 Company Name", value=existing_data.get("company_name", ""))
-                contact_person = st.text_input("Contact Person", value=existing_data.get("contact_person", ""))
-                contact_email = st.text_input("Contact Email (Optional)", value=existing_data.get("contact_email", ""))
-                contact_phone = st.text_input("Contact Cell Phone", value=existing_data.get("contact_phone", ""))
-                address = st.text_area("Address (Optional)", placeholder="Enter address (optional)", value=existing_data.get("address", ""))
-                
-                st.subheader("Terms and Conditions")
-                warranty = st.text_input("Warranty", value=existing_data.get("warranty", "1 year"))
-                down_payment = st.number_input("Down payment (%)", min_value=0.0, max_value=100.0, 
-                                            value=float(existing_data.get("down_payment", 50.0)))
-                delivery = st.text_input("Delivery", value=existing_data.get("delivery", "Expected in 3–4 weeks"))
-                
-                # VAT rate selection
-                selected_vat_rate = st.selectbox(
-                    "Select VAT Rate (%)",
-                    options=[14, 13],
-                    index=0 if existing_data.get("vat_rate", 0.14) == 0.14 else 1
-                )
-                vat_note = f"Prices exclude {selected_vat_rate}% VAT"
-                
-                shipping_note = st.text_input("Shipping Note", 
-                                            value=existing_data.get("shipping_note", "Shipping & Installation fees to be added"))
-                
-                st.subheader("Payment Info")
-                bank = st.text_input("Bank", value=existing_data.get("bank", "CIB"))
-                iban = st.text_input("IBAN", value=existing_data.get("iban", "EG340010015100000100049865966"))
-                account_number = st.text_input("Account Number", 
-                                            value=existing_data.get("account_number", "100049865966"))
-                company = st.text_input("Company", 
-                                    value=existing_data.get("company", "FlakeTech for Trading Company"))
-                tax_id = st.text_input("Tax ID", value=existing_data.get("tax_id", "626180228"))
-                reg_no = st.text_input("Commercial/Chamber Reg. No", value=existing_data.get("reg_no", "15971"))
-                
-                # Phone validation pattern
-                phone_pattern = r'^\+?\d+$'
-                
-                # System-generated fields
-                prepared_by = st.session_state.username
-                prepared_by_email = st.session_state.user_email
+                    # Regular users: use their own info
+                    quote_owner_id = get_zoho_user_id(st.session_state.user_email)
+                    quote_owner_name = st.session_state.username
+                    quote_owner_email = st.session_state.user_email
+
+                prepared_by = quote_owner_name  # Set prepared_by to quote owner
+                prepared_by_email = quote_owner_email  # Set prepared_by_email to quote owner
                 current_date = datetime.now().strftime("%A, %B %d, %Y")
                 valid_till = (datetime.now() + timedelta(days=10)).strftime("%A, %B %d, %Y")
                 quotation_validity = "30 days"
@@ -1447,6 +1308,9 @@ elif st.session_state.role == "buyer":
                             "address": address,
                             "prepared_by": prepared_by,
                             "prepared_by_email": prepared_by_email,
+                            "quote_owner_id": quote_owner_id,
+                            "quote_owner_name": quote_owner_name,  # Save quote owner name
+                            "quote_owner_email": quote_owner_email,  # Save quote owner email
                             "current_date": current_date,
                             "valid_till": valid_till,
                             "quotation_validity": quotation_validity,
@@ -1463,12 +1327,21 @@ elif st.session_state.role == "buyer":
                             "tax_id": tax_id,
                             "reg_no": reg_no
                         }
+                        # Debug output to verify saved details
+                        st.write("🔍 Debug - Saved Company Details:", {
+                            "Company Name": st.session_state.company_details["company_name"],
+                            "Quote Owner ID": st.session_state.company_details["quote_owner_id"],
+                            "Quote Owner Name": st.session_state.company_details["quote_owner_name"],
+                            "Quote Owner Email": st.session_state.company_details["quote_owner_email"],
+                            "Prepared By": st.session_state.company_details["prepared_by"],
+                            "Prepared By Email": st.session_state.company_details["prepared_by_email"]
+                        })
                         if 'edit_mode' in st.session_state:
                             del st.session_state.edit_mode
                         success_message = "✅ Details updated successfully!" if edit_mode else "✅ Details submitted successfully!"
                         st.success(success_message)
                         st.rerun()
-            
+
             # Always show this warning if form not submitted
             if not st.session_state.get('form_submitted', False):
                 st.warning("⚠ Please fill in your company details to continue")
@@ -2412,5 +2285,171 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 key=f"download_pdf_{data_hash}"
             )
 
+def create_zoho_quote(company_details, items, final_total, shipping_fee=0, installation_fee=0):
+    token = get_zoho_access_token()
+    owner_id = company_details.get("quote_owner_id")
+    st.write("🎯 Creating quote - Selected Quote Owner ID:", repr(owner_id))
+    st.write("🎯 Quote Owner Name:", company_details.get("quote_owner_name", "Unknown"))
+    st.write("🎯 Quote Owner Email:", company_details.get("quote_owner_email", "Unknown"))
+
+    if not token:
+        st.error("❌ No Zoho access token available.")
+        return None
+
+    if not owner_id:
+        st.error("❌ No valid Quote Owner ID found in company details.")
+        return None
+
+    url = f"{st.secrets['zoho']['crm_api_domain']}/crm/v2/Quotes"
+    headers = {
+        "Authorization": f"Zoho-oauthtoken {token}",
+        "Content-Type": "application/json"
+    }
+
+    # Parse address safely
+    addr = company_details.get("address", "")
+    if not addr or addr.strip() == "":
+        street, city, country = "N/A", "Cairo", "Egypt"
+    else:
+        parts = addr.split(",")
+        street = parts[0].strip()
+        city = parts[1].strip() if len(parts) > 1 else "Cairo"
+        country = parts[2].strip() if len(parts) > 2 else "Egypt"
+
+    # Find Account ID
+    account_id = get_zoho_account_id(company_details["company_name"])
+    if not account_id:
+        st.error(f"❌ Account '{company_details['company_name']}' not found in Zoho CRM.")
+        return None
+
+    product_details = []
+    for item in items:
+        sku = item.get("SKU")
+        product_id = get_zoho_product_id(sku)
+        
+        if not product_id:
+            st.warning(f"⚠️ Skipping product '{item['Item']}' (SKU: {sku}) - not found in Zoho CRM.")
+            continue
+
+        try:
+            quantity = float(item["Quantity"])
+            unit_price = float(item["Price per item"])
+            total = float(item["Total price"])
+            discount_amount = max(0, (unit_price * quantity) - total)
+        except Exception as e:
+            st.error(f"❌ Invalid data for '{item['Item']}': {e}")
+            continue
+
+        product_details.append({
+            "product": {"id": product_id},
+            "quantity": quantity,
+            "unit_price": round(unit_price, 2),
+            "Discount": round(discount_amount, 2)
+        })
+
+    if not product_details:
+        st.error("❌ No valid products to quote. Please ensure products have valid SKUs.")
+        return None
+
+    st.write("📦 Product details for Zoho:", product_details)
+
+    # Build payload
+    payload = {
+        "data": [
+            {
+                "Subject": f"Quotation for {company_details['company_name']}",
+                "Account_Name": {"id": account_id},
+                "Owner": {"id": owner_id},  # Use 'Owner' field for Quote_Owner
+                "Quote_Stage": "Draft",
+                "Date_of_Quotation": datetime.now().strftime("%Y-%m-%d"),
+                "Valid_Until": (datetime.now() + timedelta(days=10)).strftime("%Y-%m-%d"),
+                "Currency": "EGP",
+                "Exchange_Rate": 1.0,
+                "Adjustment": round(shipping_fee + installation_fee, 2),
+                "Grand_Total": round(final_total + shipping_fee + installation_fee, 2),
+                "Shipping_Street": street,
+                "Shipping_City": city,
+                "Shipping_Country": country,
+                "Terms_and_Conditions": (
+                    f"Warranty: {company_details['warranty']}\n"
+                    f"Down Payment: {company_details['down_payment']}%\n"
+                    f"Delivery: {company_details['delivery']}\n"
+                    f"{company_details['shipping_note']}"
+                ),
+                "Product_Details": product_details
+            }
+        ]
+    }
+
+    # Clean NaN/None values
+    payload = json.loads(json.dumps(payload, default=str))
+
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        if response.status_code in (200, 201):
+            quote_id = response.json()["data"][0]["details"]["id"]
+            st.write(f"✅ Zoho API Response: {response.json()}")
+            st.success(f"✅ Quote created in Zoho CRM! ID: {quote_id}")
+            return quote_id
+        else:
+            st.error(f"❌ Zoho API Error: {response.status_code} - {response.json()}")
+            return None
+    except Exception as e:
+        st.error(f"❌ Failed to create quote in Zoho CRM: {e}")
+        return None
+
+def get_zoho_product_id(sku):
+    if not sku or str(sku).strip() == "" or str(sku).lower() == "n/a":
+        st.write(f"⚠️ Invalid or missing SKU: {sku}")
+        return None
+
+    try:
+        sku_str = str(sku).strip()
+        token = get_zoho_access_token()
+        if not token:
+            st.error("❌ No Zoho access token available.")
+            return None
+
+        # Use the correct search endpoint with GET method
+        url = f"{st.secrets['zoho']['crm_api_domain']}/crm/v2/Products/search"
+        headers = {
+            "Authorization": f"Zoho-oauthtoken {token}"
+        }
+        # Search using criteria for Product_Code
+        params = {
+            "criteria": f"(Product_Code:equals:{sku_str})"
+        }
+
+        # Use GET request
+        response = requests.get(url, headers=headers, params=params)
+
+        if response.status_code == 200:
+            data = response.json().get("data", [])
+            if data:
+                product_id = data[0]["id"]
+                product_name = data[0]["Product_Name"]
+                st.write(f"✅ Found product by SKU '{sku_str}': '{product_name}' (ID: {product_id})")
+                return product_id
+            else:
+                st.warning(f"⚠️ No product found in Zoho CRM with Product_Code = '{sku_str}'")
+                return None
+        else:
+            error_detail = response.json()
+            st.error(f"❌ Zoho Search API Error ({response.status_code}): {error_detail}")
+            return None
+
+    except Exception as e:
+        st.error(f"❌ Error searching for product by SKU '{sku}': {e}")
+        return None
+
+if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
+    with st.spinner("Creating quote in Zoho..."):
+        create_zoho_quote(
+            company_details=st.session_state.company_details,
+            items=output_data,
+            final_total=final_total,
+            shipping_fee=st.session_state.shipping_fee,
+            installation_fee=st.session_state.installation_fee,
+        )
 
 
