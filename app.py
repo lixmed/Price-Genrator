@@ -101,6 +101,37 @@ def get_zoho_access_token():
         st.error(f"Unexpected error while getting Zoho token: {str(e)}")
         raise
 
+@st.cache_data(ttl=900)  # Cache for 15 minutes
+def fetch_zoho_users():
+    """Fetch all active users from Zoho CRM (usable as Quote Owners)"""
+    try:
+        token = get_zoho_access_token()
+        if not token:
+            st.error("❌ Cannot fetch users: Invalid Zoho token")
+            return []
+
+        url = f"{st.secrets['zoho']['crm_api_domain']}/crm/v2/users"
+        headers = {"Authorization": f"Zoho-oauthtoken {token}"}
+        params = {"type": "ActiveUsers"}  # Only active users with licenses
+
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        data = response.json().get("users", [])
+
+        # Extract name and email
+        users = []
+        for user in data:
+            users.append({
+                "name": user.get("full_name", user.get("first_name", "")),
+                "email": user.get("email"),
+                "id": user.get("id")
+            })
+        return users
+    except Exception as e:
+        st.error(f"❌ Failed to fetch Zoho users: {str(e)}")
+        return []
+
+
 
 def fetch_zoho_accounts():
     """Fetch Account_Name, Phone, Owner, and Billing_Street from Zoho CRM"""
@@ -2380,5 +2411,6 @@ if st.button("📅 Generate PDF Quotation") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
+
 
 
