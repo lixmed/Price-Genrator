@@ -1247,36 +1247,46 @@ if st.session_state.role == "admin":
                 # Phone validation pattern
                 phone_pattern = r'^\+?\d+$'
                 
-                # --- ZOHO QUOTE OWNER SELECTION ---
+                # --- ZOHO QUOTE OWNER SELECTION (Automatic) ---
                 if st.session_state.role == "admin":
                     with st.spinner("📡 Loading Zoho CRM users..."):
                         zoho_users = fetch_zoho_users()
-
-                    if zoho_users:
-                        owner_options = [f"{u['name']} <{u['email']}>" for u in zoho_users]
-                        default_idx = 0
-                        for i, u in enumerate(zoho_users):
-                            if u["email"] == st.session_state.user_email:
-                                default_idx = i
-                                break
-
-                        selected_owner_str = st.selectbox(
-                            "👤 Quote Owner (Sales Rep)",
-                            options=owner_options,
-                            index=default_idx,
-                            help="Select who owns this quotation in Zoho CRM"
-                        )
-                        # Extract selected user
-                        selected_email = selected_owner_str.split("<")[1].strip(">")
-                        selected_user = next(u for u in zoho_users if u["email"] == selected_email)
-                        quote_owner_id = selected_user["id"]
-                        quote_owner_name = selected_user["name"]
-                        quote_owner_email = selected_user["email"]
+                    
+                    # Find the logged-in user in the Zoho users list by matching email
+                    current_user_email = st.session_state.user_email.lower().strip()
+                    matched_user = next((u for u in zoho_users if u["email"].lower().strip() == current_user_email), None)
+                    
+                    if matched_user:
+                        # ✅ User found in Zoho CRM
+                        st.success(f"👤 Quote Owner: **{matched_user['name']}** (from Zoho CRM)")
+                        st.write(f"📧 Email: `{matched_user['email']}`")
+                        
+                        # Set the quote owner details directly
+                        quote_owner_id = matched_user["id"]
+                        quote_owner_name = matched_user["name"]
+                        quote_owner_email = matched_user["email"]
+                        
+                        # You can optionally add a "Change Owner" button here for rare cases
+                        # if st.button("Change Quote Owner"):
+                        #     st.session_state.show_owner_select = True # (You'd need to manage this state)
+                        
                     else:
-                        st.warning("⚠️ Could not load Zoho users. Using session user.")
-                        quote_owner_id = get_zoho_user_id(st.session_state.user_email)
-                        quote_owner_name = st.session_state.username
-                        quote_owner_email = st.session_state.user_email
+                        # ❌ User not found in Zoho CRM
+                        st.error(f"❌ Your email ({current_user_email}) was not found in Zoho CRM Active Users.")
+                        st.info("Please contact your administrator to ensure your Zoho CRM user is active and your email is correct.")
+                        
+                        # Fallback: Try to get the ID directly (less reliable)
+                        fallback_id = get_zoho_user_id(current_user_email)
+                        if fallback_id:
+                            st.warning("⚠️ Using fallback method to get user ID.")
+                            quote_owner_id = fallback_id
+                            quote_owner_name = st.session_state.username
+                            quote_owner_email = current_user_email
+                        else:
+                            st.error("❌ Could not get a valid user ID from Zoho CRM. Quote creation may fail.")
+                            quote_owner_id = None
+                            quote_owner_name = st.session_state.username
+                            quote_owner_email = current_user_email
                 else:
                     # Regular users: use their own info
                     quote_owner_id = get_zoho_user_id(st.session_state.user_email)
@@ -2451,6 +2461,5 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
-
 
 
