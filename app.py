@@ -2194,6 +2194,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
 
 
 
+
 # #################### technical offer###################
 @st.cache_data
 def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png", 
@@ -3195,6 +3196,7 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
+
 
 
 
