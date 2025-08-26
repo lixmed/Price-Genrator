@@ -21,6 +21,11 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from reportlab.platypus import KeepInFrame
 import json
+from reportlab.lib.colors import orange
+from reportlab.graphics.shapes import Drawing, Path
+from reportlab.platypus import Flowable
+from reportlab.lib import colors
+from reportlab.platypus import Image as RLImage
 
 # ========== Page Config ==========
 st.set_page_config(page_title="Quotation Builder", page_icon="🪑", layout="wide")
@@ -2183,6 +2188,700 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
 # ========== Generate PDF & Save to History ==========
 
 
+
+
+# #################### technical offer###################
+@st.cache_data
+def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png", 
+                    intro_path="FT-Quotation-Temp-1.jpg", closure_path="FT-Quotation-Temp-2.jpg",
+                    bg_path="FT Quotation Temp[1](1).jpg"):
+    
+    def build_pdf(data, total, company_details, hdr_path, ftr_path, intro_path, closure_path, bg_path):
+        # Create temp file
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+        pdf_path = tmp.name
+        tmp.close()
+
+        doc = SimpleDocTemplate(
+            pdf_path,
+            pagesize=A3,
+            topMargin=100,
+            leftMargin=40,
+            rightMargin=70,
+            bottomMargin=250
+        )
+        styles = getSampleStyleSheet()
+        elems = []
+        styles['Normal'].fontSize = 14
+        styles['Normal'].leading = 20
+
+        aligned_style = ParagraphStyle(
+            name='LeftAligned',
+            parent=styles['Normal'],
+            alignment=0,
+            spaceBefore=5,
+            spaceAfter=12,
+            leftIndent=50
+        )
+
+        # Variables to track page structure
+        cover_page = 1
+        content_start_page = 2
+        closure_page_num = None
+
+        def header_footer(canvas, doc):
+            canvas.saveState()
+            page_num = canvas.getPageNumber()
+            
+            # Draw full-page cover image on first page
+            if page_num == cover_page and intro_path and os.path.exists(intro_path):
+                canvas.drawImage(intro_path, 0, 0, width=A3[0], height=A3[1])
+                canvas.restoreState()
+                return
+            
+            # Draw full-page closure image on last page
+            if closure_page_num is not None and page_num == closure_page_num and closure_path and os.path.exists(closure_path):
+                canvas.drawImage(closure_path, 0, 0, width=A3[0], height=A3[1])
+                canvas.restoreState()
+                return
+            
+            # Draw background image on content pages
+            if bg_path and os.path.exists(bg_path) and page_num >= content_start_page and (closure_page_num is None or page_num < closure_page_num):
+                canvas.drawImage(bg_path, 0, 0, width=A3[0], height=A3[1], preserveAspectRatio=True, mask='auto')
+            
+            # Add page numbering for content pages only
+            if page_num >= content_start_page and (closure_page_num is None or page_num < closure_page_num):
+                canvas.setFont('Helvetica', 10)
+                content_page_num = page_num - content_start_page + 1
+                canvas.drawRightString(doc.width + doc.leftMargin, 40, f"Page {content_page_num}")
+            
+            canvas.restoreState()
+
+        # === Cover Page ===
+        if intro_path and os.path.exists(intro_path):
+            elems.append(PageBreak())
+
+        # === Company Details ===
+        # detail_lines = [
+        #     "<para align='left'><font size=14>",
+        #     f"<b>Date:</b> <font color='black'>{company_details['current_date']}</font><br/>",
+        #     f"<b>Valid Till:</b> <font color='black'>{company_details['valid_till']}</font><br/>",
+        #     f"<b>Quotation Validity:</b> <font color='black'>{company_details['quotation_validity']}</font><br/>",
+        #     f"<b>Prepared By:</b> <font color='black'>{company_details['prepared_by']}</font><br/>",
+        #     f"<b>Email:</b> <font color='black'>{company_details['prepared_by_email']}</font><br/><br/>",
+        #     f"<b>Contact Person:</b> <font color='black'>{company_details['contact_person']}</font><br/>",
+        #     f"<b>Company Name:</b> <font color='black'>{company_details['company_name']}</font><br/>",
+        # ]
+        # if company_details.get("address"):
+        #     detail_lines.append(f"<b>Address:</b> <font color='black'>{company_details['address']}</font><br/>")
+        # detail_lines.append(f"<b>Cell Phone:</b> <font color='black'>{company_details['contact_phone']}</font><br/>")
+        # if company_details.get("contact_email"):
+        #     detail_lines.append(f"<b>Contact Email:</b> <font color='black'>{company_details['contact_email']}</font><br/>")
+        # detail_lines.append("</font></para>")
+        # details = "".join(detail_lines)
+        
+        # elems.append(Spacer(1, 20))
+        # elems.append(Paragraph(details, aligned_style))
+
+        # # === Terms & Conditions ===
+        # terms_conditions = f"""
+        # <para align="left">
+        # <font size=14>
+        # <b>Terms and Conditions:</b><br/>
+        # • Warranty: {company_details['warranty']}<br/>
+        # • Down payment: {company_details['down_payment']}% of the total invoice<br/>
+        # • Delivery: {company_details['delivery']}<br/>
+        # • {company_details['vat_note']}<br/>
+        # • {company_details['shipping_note']}<br/>
+        # </font>
+        # </para>
+        # """
+        # elems.append(Spacer(1, 15))
+        # elems.append(Paragraph(terms_conditions, aligned_style))
+
+        # # === Payment Info ===
+        # payment_info = f"""
+        # <para align="left">
+        # <font size=14>
+        # <b>Payment Info:</b><br/>
+        # <b>Bank:</b> <font color="black">{company_details['bank']}</font><br/>
+        # <b>IBAN:</b> <font color="black">{company_details['iban']}</font><br/>
+        # <b>Account Number:</b> <font color="black">{company_details['account_number']}</font><br/>
+        # <b>Company:</b> <font color="black">{company_details['company']}</font><br/>
+        # <b>Tax ID:</b> <font color="black">{company_details['tax_id']}</font><br/>
+        # <b>Commercial/Chamber Reg. No:</b> <font color="black">{company_details['reg_no']}</font>
+        # </font>
+        # </para>
+        # """
+        # elems.append(Spacer(1, 15))
+        # elems.append(Paragraph(payment_info, aligned_style))
+        
+        # # Always start products on new page
+        # elems.append(PageBreak())
+
+        def is_empty(val):
+            return pd.isna(val) or val is None or str(val).lower() == 'nan'
+
+        def safe_str(val):
+            return "" if is_empty(val) else str(val)
+
+        def safe_float(val):
+            return "" if is_empty(val) else f"{float(val):.2f}"
+
+        data_from_hash = data
+        has_discounts = any(float(item.get('Discount %', 0)) > 0 for item in data_from_hash)
+
+        # Calculate subtotals
+        subtotal_before = 0.0
+        subtotal_after = 0.0
+        for r in data_from_hash:
+            unit_price = float(r.get('Price per item', 0))
+            qty = float(r.get('Quantity', 1))
+            disc_pct = float(r.get('Discount %', 0))
+            discounted_price = unit_price * (1 - disc_pct / 100)
+            subtotal_before += unit_price * qty
+            subtotal_after += discounted_price * qty
+
+        discount_amount = subtotal_before - subtotal_after
+
+        # Calculate overall discount if applicable
+        overall_disc_amount = max(subtotal_after - total, 0.0) if abs(subtotal_after - total) > 0.01 else 0.0
+        total_after_discount = total if overall_disc_amount > 0 else subtotal_after
+
+        temp_files = []
+
+        # Define styles for product pages
+        product_name_style = ParagraphStyle(
+            name='ProductName',
+            parent=styles['Normal'],
+            fontSize=24,
+            leading=28,
+            alignment=0,  # Left align for right column
+            spaceAfter=6,
+            leftIndent=100  # Shift to the right
+        )
+
+        cat_warr_style = ParagraphStyle(
+            name='CatWarr',
+            parent=styles['Normal'],
+            fontSize=12,
+            leading=14,
+            alignment=0,  # Left
+            spaceAfter=12,
+            leftIndent=100  # Shift to the right
+        )
+
+        overview_title_style = ParagraphStyle(
+            name='OverviewTitle',
+            parent=styles['Normal'],
+            fontSize=14,
+            leading=16,
+            fontName='Helvetica-Bold',
+            alignment=0,
+            spaceAfter=6,
+            leftIndent=100  # Align with other right column content
+        )
+
+        overview_text_style = ParagraphStyle(
+            name='OverviewText',
+            parent=styles['Normal'],
+            fontSize=12,
+            leading=14,
+            alignment=0,
+            leftIndent=100  # Shift description to the right
+        )
+
+        specs_title_style = ParagraphStyle(
+            name='SpecsTitle',
+            parent=styles['Normal'],
+            fontSize=16,
+            leading=20,
+            alignment=0,
+            spaceAfter=0  # Changed to 0 to make it directly above
+        )
+
+        feature_title_style = ParagraphStyle(
+            name='FeatureTitle',
+            parent=styles['Normal'],
+            fontSize=16,
+            leading=16,
+            textColor=colors.orange,
+            spaceBefore=12,
+            spaceAfter=6,
+            leftIndent=42 # Shift features to the right
+        )
+
+        bullet_style = ParagraphStyle(
+            name='Bullet',
+            parent=styles['Normal'],
+            fontSize=14,
+            leading=14,
+            leftIndent=70,  # Increased indent for bullets
+            firstLineIndent=-10,
+            spaceAfter=4
+        )
+
+        bar_label_style = ParagraphStyle(
+            name='BarLabel',
+            parent=styles['Normal'],
+            fontSize=12,
+            leading=14,
+            alignment=0
+        )
+
+        bottom_box_style = ParagraphStyle(
+            name='BottomBox',
+            parent=styles['Normal'],
+            fontSize=12,
+            leading=14,
+            alignment=1  # Center
+        )
+
+        # Build product pages - one per product
+        for idx, r in enumerate(data_from_hash, 1):
+            if idx > 1:
+                elems.append(PageBreak())
+
+            # Product Overview with Image side by side, including name and details
+            description = r.get('Description', 'No description available.')
+            overview_title = Paragraph("Product Overview", overview_title_style)
+            overview_para = Paragraph(description, overview_text_style)
+
+            # Create image with proper error handling
+            img_element = Paragraph("No Image", styles['Normal'])
+            if r.get("Image"):
+                download_url = convert_google_drive_url_for_storage(r["Image"])
+                temp_img_path = download_image_for_pdf(download_url, max_size=(300, 300))
+                if temp_img_path and os.path.exists(temp_img_path):
+                    try:
+                        # Create a custom flowable with rounded border
+                        class BorderedImage(Flowable):
+                            def __init__(self, img_path, width=200, height=200, radius=10):
+                                Flowable.__init__(self)
+                                self.img_path = img_path
+                                self.width = width
+                                self.height = height
+                                self.radius = radius
+                                
+                            def wrap(self, *args):
+                                return self.width, self.height
+                                
+                            def draw(self):
+                                # Set line properties BEFORE drawing the rectangle
+                                self.canv.setLineWidth(1.5)
+                                self.canv.setStrokeColor(colors.orange)
+                                
+                                # Correct roundRect usage with only positional and basic parameters
+                                self.canv.roundRect(0, 0, self.width, self.height, self.radius, stroke=1, fill=0)
+                                
+                                # Draw the image inside with proper padding
+                                img = RLImage(self.img_path)
+                                img.drawWidth = self.width - 8
+                                img.drawHeight = self.height - 8
+                                img.drawOn(self.canv, 4, 4)
+                        
+                        img_element = BorderedImage(temp_img_path)
+                        temp_files.append(temp_img_path)
+                    except Exception as e:
+                        print(f"Error creating bordered image: {e}")
+                        # Fallback to regular image without border
+                        try:
+                            img = RLImage(temp_img_path)
+                            img.drawWidth = 150
+                            img.drawHeight = 150
+                            img_element = img
+                        except:
+                            img_element = Paragraph("Image Processing Error", styles['Normal'])
+                else:
+                    img_element = Paragraph("Image Not Found", styles['Normal'])
+
+            # Flakeekeke image
+            flake_image = Paragraph("Flakeekeke Image Not Found", styles['Normal'])
+            flake_image_path = "Screenshot 2025-08-26 111602.png"
+            if os.path.exists(flake_image_path):
+                try:
+                    img = RLImage(flake_image_path)
+                    img.drawWidth = 250  # Increased width to stretch
+                    img.drawHeight = 100
+                    # Wrap image in a table to apply left indent
+                    flake_image_table = Table([[img]], colWidths=[150], rowHeights=[100])
+                    flake_image_table.setStyle(TableStyle([
+                        ('LEFTPADDING', (0, 0), (-1, -1), 100),  # Shift right to align with product name
+                        ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
+                    ]))
+                    flake_image = flake_image_table
+                except Exception as e:
+                    print(f"Error loading flakeekeke image: {e}")
+                    flake_image = Paragraph("Flakeekeke Image Processing Error", styles['Normal'])
+            else:
+                print(f"Flakeekeke image not found at: {flake_image_path}")
+
+            # Product Name
+            product_name_para = Paragraph(safe_str(r.get('Item', 'Product Name')), product_name_style)
+
+            # Category and Warranty with bold labels
+            cat_warr_text = f"<b>Category:</b> Reception & Seating<br/><b>Warranty:</b> {safe_str(r.get('Warranty', '2 Years'))}"
+            cat_warr_para = Paragraph(cat_warr_text, cat_warr_style)
+
+            # Right column content: flakeekeke image, spacer, name, cat_warr, overview title, overview
+            right_content_data = [
+                [flake_image],
+                [Spacer(1, 10)],  # Small spacer to shift content down slightly
+                [product_name_para],
+                [cat_warr_para],
+                [overview_title],
+                [overview_para]
+            ]
+            right_content_table = Table(right_content_data, colWidths=[420])
+            right_content_table.setStyle(TableStyle([
+                ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ]))
+
+            # Create side-by-side layout
+            side_data = [[img_element, right_content_table]]
+            side_col_widths = [180, 420]
+            side_table = Table(side_data, colWidths=side_col_widths, rowHeights=260)  # Slightly increased height to accommodate stretched image
+            side_table.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
+                ('LEFTPADDING', (0, 0), (0, 0), 0),
+                ('RIGHTPADDING', (0, 0), (0, 0), 20),
+                ('TOPPADDING', (0, 0), (-1, -1), 0),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ]))
+            elems.append(side_table)
+
+            # Add horizontal line after product overview
+            elems.append(Spacer(1, 12))
+            hr_data = [[""]]
+            hr_table = Table(hr_data, colWidths=[600], rowHeights=2)
+            hr_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.orange),
+                ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
+            ]))
+            elems.append(hr_table)
+            elems.append(Spacer(1, 12))
+
+            # SPECIFICATIONS
+            specs_title_right_style = ParagraphStyle(
+                'SpecsTitleRight',
+                parent=specs_title_style,
+                leftIndent=65  # Adjust this value (30 points = ~0.42 inches)
+            )
+            elems.append(Paragraph("SPECIFICATIONS", specs_title_right_style))
+
+            # Specs table (left)
+            specs_data = [
+                ["Structure", ""],
+                ["Cover", ""],
+                ["Cushion", ""],
+                ["Foam", ""],
+                ["Dimensions", ""],
+                ["Weight capacity", ""],
+                ["Certification", ""],
+                ["Maintenance", ""],
+            ]
+            specs_col_widths = [150, 50]  
+            specs_table = Table(specs_data, colWidths=specs_col_widths, rowHeights=[30]*8)  # Increased row height to 30
+            specs_table.setStyle(TableStyle([
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+                ('FONTSIZE', (0, 0), (-1, -1), 12),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+
+            # Features (right) - hardcoded to match image exactly
+            ergonomic_title = Paragraph("Ergonomic & Comfort Features:", feature_title_style)
+            ergonomic_bullets = [
+                Paragraph("• Wide seat base for maximum", bullet_style),
+                Paragraph("• Supportive high-density foam discomfort", bullet_style),
+            ]
+
+            durability_title = Paragraph("Durability & Warranty:", feature_title_style)
+            durability_bullets = [
+                Paragraph("• Solid beech wood ensures long", bullet_style),
+                Paragraph("• Protective finish for wear", bullet_style),
+                Paragraph("• Standard 2-year warranty, care", bullet_style),
+            ]
+
+            customization_title = Paragraph("Customization Options:", feature_title_style)
+            customization_bullets = [
+                Paragraph("• Multiple upholstery colors", bullet_style),
+                Paragraph("• Optional wood stain finishes to", bullet_style),
+            ]
+
+            sustainability_title = Paragraph("Sustainability:", feature_title_style)
+            sustainability_bullets = [
+                Paragraph("• Wood sourced from FSC-certified", bullet_style),
+                Paragraph("• Low-VOC finishes for healthier.", bullet_style),
+            ]
+
+            right_flowables = (
+                [ergonomic_title] + ergonomic_bullets +
+                [durability_title] + durability_bullets +
+                [customization_title] + customization_bullets +
+                [sustainability_title] + sustainability_bullets
+            )
+
+            right_data = [[f] for f in right_flowables]
+            right_table = Table(right_data, colWidths=[300])
+            right_table.setStyle(TableStyle([
+                ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ]))
+
+            # Side by side specs and features
+            specs_features_data = [[specs_table, right_table]]
+            specs_features_col_widths = [250, 350]
+            specs_features_table = Table(specs_features_data, colWidths=specs_features_col_widths)
+            specs_features_table.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
+            ]))
+            elems.append(specs_features_table)
+
+            elems.append(Spacer(1, 12))
+
+            # Horizontal line
+            hr_data = [[""]]
+            hr_table = Table(hr_data, colWidths=[600], rowHeights=2)
+            hr_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.orange),
+                ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
+            ]))
+            elems.append(hr_table)
+
+            elems.append(Spacer(1, 12))
+
+            # Warranty bar
+            warranty_label = Paragraph("Warranty", bar_label_style)
+            total_bar_width = 300
+            warranty_years = 2  # Default; parse if needed
+            if r.get('Warranty'):
+                try:
+                    warranty_years = int(safe_str(r['Warranty']).split()[0])
+                except:
+                    pass
+
+            # Calculate filled width based on warranty years
+            filled_width = (warranty_years / 10.0) * total_bar_width
+
+            # Create the main bar
+            bar_data = [["", ""]]
+            bar_col_widths = [filled_width, total_bar_width - filled_width]
+            bar_table = Table(bar_data, colWidths=bar_col_widths, rowHeights=10)
+            bar_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, 0), colors.black),
+                ('BACKGROUND', (1, 0), (1, 0), colors.lightgrey),
+                ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
+            ]))
+
+            # Create number pointers (0-10) above the bar
+            pointer_width = total_bar_width / 10  # Each number gets equal space
+            pointer_data = [[]]
+            pointer_col_widths = []
+
+            for i in range(11):  # 0 to 10
+                # Create paragraph for each number
+                if i <= warranty_years:
+                    # Highlight numbers up to warranty years
+                    pointer_style = ParagraphStyle(
+                        'PointerHighlight',
+                        parent=bar_label_style,
+                        fontSize=8,
+                        textColor=colors.black,
+                        fontName='Helvetica-Bold'
+                    )
+                else:
+                    # Normal style for numbers beyond warranty
+                    pointer_style = ParagraphStyle(
+                        'PointerNormal', 
+                        parent=bar_label_style,
+                        fontSize=8,
+                        textColor=colors.grey
+                    )
+                
+                pointer_data[0].append(Paragraph(str(i), pointer_style))
+                pointer_col_widths.append(pointer_width)
+
+            # Create table for number pointers
+            pointer_table = Table(pointer_data, colWidths=pointer_col_widths, rowHeights=15)
+            pointer_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
+            ]))
+
+            # Create the complete bar section with pointers above
+            bar_section_data = [
+                [pointer_table],  # Numbers on top
+                [bar_table]       # Bar below
+            ]
+            bar_section_table = Table(bar_section_data, colWidths=[total_bar_width], rowHeights=[15, 10])
+            bar_section_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
+            ]))
+
+            # Create labels for 0 and 10 years
+            label_0 = Paragraph("0", bar_label_style)
+            label_10 = Paragraph("10 yrs", bar_label_style)
+
+            # Combine everything in the final row
+            bar_row_data = [[label_0, bar_section_table, label_10]]
+            bar_row_col_widths = [30, total_bar_width, 50]
+            bar_row_table = Table(bar_row_data, colWidths=bar_row_col_widths)
+            bar_row_table.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('ALIGN', (0, 0), (0, 0), 'RIGHT'),
+                ('ALIGN', (2, 0), (2, 0), 'LEFT'),
+                ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
+            ]))
+
+            # Final warranty table
+            warranty_row_data = [[warranty_label, bar_row_table]]
+            warranty_row_col_widths = [100, 380]
+            warranty_table = Table(warranty_row_data, colWidths=warranty_row_col_widths)
+            warranty_table.setStyle(TableStyle([
+                ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            elems.append(warranty_table)
+
+            # Customization bar (hardcoded to match image, assuming mid-high)
+            customization_label = Paragraph("Customization", bar_label_style)
+            customization_level = 0.6  # Approximate from image
+            filled_width_c = customization_level * total_bar_width
+            bar_table_c = Table(bar_data, colWidths=[filled_width_c, total_bar_width - filled_width_c], rowHeights=10)
+            bar_table_c.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, 0), colors.black),
+                ('BACKGROUND', (1, 0), (1, 0), colors.lightgrey),
+                ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
+            ]))
+            label_high = Paragraph("High", bar_label_style)
+            bar_row_data_c = [[label_0, bar_table_c, label_high]]
+            bar_row_table_c = Table(bar_row_data_c, colWidths=bar_row_col_widths)
+            bar_row_table_c.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('ALIGN', (0, 0), (0, 0), 'RIGHT'),
+                ('ALIGN', (2, 0), (2, 0), 'LEFT'),
+                ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
+            ]))
+            customization_row_data = [[customization_label, bar_row_table_c]]
+            customization_table = Table(customization_row_data, colWidths=warranty_row_col_widths)
+            customization_table.setStyle(TableStyle([
+                ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            elems.append(customization_table)
+
+            elems.append(Spacer(1, 24))
+
+            # Bottom price, quantity, total boxes
+            price_text = f"Price<br/>{safe_float(r.get('Price per item', 0))} LE"
+            quantity_text = f"Quantity<br/>{safe_str(r.get('Quantity', ''))}"
+            total_text = f"Total<br/>{safe_float(r.get('Total price', 0))} LE"
+            bottom_data = [[Paragraph(price_text, bottom_box_style),
+                            Paragraph(quantity_text, bottom_box_style),
+                            Paragraph(total_text, bottom_box_style)]]
+            bottom_col_widths = [150, 150, 150]
+            bottom_table = Table(bottom_data, colWidths=bottom_col_widths, rowHeights=50)
+            bottom_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.white),
+                ('GRID', (0, 0), (-1, -1), 1, colors.orange),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ]))
+            elems.append(bottom_table)
+
+        # Add summary table after all products
+        # elems.append(PageBreak())  # Start summary on new page if desired, or remove to attach to last product
+
+        # === Summary Table ===
+        # vat_rate = company_details.get("vat_rate", 0.14)
+        # shipping_fee = float(company_details.get("shipping_fee", 0.0))
+        # installation_fee = float(company_details.get("installation_fee", 0.0))
+        # vat = (shipping_fee + total_after_discount) * vat_rate
+        # grand_total = total_after_discount + shipping_fee + installation_fee + vat
+
+        # summary_data = []
+        # has_any_discount = (discount_amount > 0 or overall_disc_amount > 0)
+        # if has_any_discount:
+        #     summary_data.append(["Subtotal Before Discounts", f"{subtotal_before:.2f} EGP"])
+        #     if discount_amount > 0:
+        #         summary_data.append(["Special Discount", f"- {discount_amount:.2f} EGP"])
+        #     if overall_disc_amount > 0:
+        #         summary_data.append(["Overall Discount", f"- {overall_disc_amount:.2f} EGP"])
+        #     summary_data.append(["Total After Discounts", f"{total_after_discount:.2f} EGP"])
+        # else:
+        #     summary_data.append(["Total", f"{total_after_discount:.2f} EGP"])
+
+        # if shipping_fee > 0:
+        #     summary_data.append(["Shipping Fee", f"{shipping_fee:.2f} EGP"])
+        # if installation_fee > 0:
+        #     summary_data.append(["Installation Fee", f"{installation_fee:.2f} EGP"])
+
+        # summary_data.append([f"VAT ({int(vat_rate * 100)}%)", f"{vat:.2f} EGP"])
+        # summary_data.append(["Grand Total", f"{grand_total:.2f} EGP"])
+
+        # # Collect discount row indices for styling
+        # discount_row_indices = [i for i, row in enumerate(summary_data) if "Discount" in row[0]]
+
+        # summary_col_widths = [400, 200]
+        # summary_table = Table(summary_data, colWidths=summary_col_widths)
+
+        # # Base styles
+        # summary_styles = [
+        #     ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+        #     ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        #     ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        #     ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        #     ('FONTSIZE', (0, 0), (-1, -1), 12),
+        #     ('GRID', (0, 0), (-1, -1), 1.0, colors.black),
+        #     ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
+        # ]
+
+        # # Add red text for discount amounts
+        # for row_idx in discount_row_indices:
+        #     summary_styles.append(('TEXTCOLOR', (1, row_idx), (1, row_idx), colors.black))
+
+        # summary_table.setStyle(TableStyle(summary_styles))
+        # elems.append(summary_table)
+
+        # === Closure Page ===
+        if closure_path and os.path.exists(closure_path):
+            elems.append(PageBreak())
+            elems.append(Spacer(1, 1))
+            closure_page_num = len([e for e in elems if isinstance(e, PageBreak)]) + 1
+
+        # Build PDF
+        try:
+            doc.build(elems, onFirstPage=header_footer, onLaterPages=header_footer)
+        except Exception as e:
+            print(f"PDF build failed: {e}")
+            raise
+        finally:
+            for temp_file in temp_files:
+                try:
+                    os.unlink(temp_file)
+                except Exception as e:
+                    print(f"Failed to delete temp file: {e}")
+
+        return pdf_path
+
+    # Ensure data is in session state
+    st.session_state.pdf_data = st.session_state.get('pdf_data', [])
+
+    # Pass the actual data
+    return build_pdf(st.session_state.pdf_data, total, company_details, hdr_path, ftr_path, 
+                    intro_path, closure_path, bg_path)
+
+
+
+
+
 def load_user_history_from_sheet(user_email, sheet):
     """Load user's quotation history from Google Sheet with fallbacks"""
     if sheet is None:
@@ -2231,7 +2930,7 @@ def load_user_history_from_sheet(user_email, sheet):
 
 # Before generating PDF
 
-if st.button("📅 Generate PDF Quotation") and output_data:
+if st.button("📅 Generate finance Quotation ") and output_data:
     with st.spinner("Generating PDF and saving to cloud history..."):
         st.session_state.pdf_data = output_data
         data_str = str(output_data) + str(final_total) + str(company_details)
@@ -2242,6 +2941,71 @@ if st.button("📅 Generate PDF Quotation") and output_data:
         company_details["installation_fee"] = st.session_state.installation_fee
         
         pdf_file = build_pdf_cached(data_hash, final_total, company_details)
+
+        # 👉 Prepare record
+        new_record = {
+            "user_email": st.session_state.user_email,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "company_name": company_details["company_name"],
+            "contact_person": company_details["contact_person"],
+            "total": round(final_total, 2),
+            "items": output_data.copy(),
+            "pdf_filename": pdf_filename,
+            "quotation_hash": data_hash
+        }
+
+        # 👉 Save to session state
+        st.session_state.history.append(new_record)
+
+        # 👉 Save to Google Sheet
+        history_sheet = get_history_sheet()
+        if history_sheet:
+            try:
+                import json
+                row = [
+                    new_record["user_email"],
+                    new_record["timestamp"],
+                    new_record["company_name"],
+                    new_record["contact_person"],
+                    new_record["total"],
+                    json.dumps(new_record["items"]),
+                    new_record["pdf_filename"],
+                    new_record["quotation_hash"]
+                ]
+                history_sheet.append_row(row)
+                st.success("✅ Quotation saved to session and Google Sheet!")
+            except Exception as e:
+                st.warning(f"⚠️ Saved locally, but failed to save to Google Sheet: {e}")
+        else:
+            st.warning("⚠️ Could not connect to Google Sheet. Quotation saved locally only.")
+        history_sheet = get_history_sheet()
+        if history_sheet:
+            st.session_state.history = load_user_history_from_sheet(st.session_state.user_email, history_sheet)
+            st.success("✅ History refreshed from Google Sheet!")
+        else:
+            st.error("Failed to connect to Google Sheets.")
+        # Offer download
+        with open(pdf_file, "rb") as f:
+            st.download_button(
+                label="⬇ Click to Download PDF",
+                data=f,
+                file_name=pdf_filename,
+                mime="application/pdf",
+                key=f"download_pdf_{data_hash}"
+            )
+
+
+if st.button("📅 Generate technical Quotation ") and output_data:
+    with st.spinner("Generating PDF and saving to cloud history..."):
+        st.session_state.pdf_data = output_data
+        data_str = str(output_data) + str(final_total) + str(company_details)
+        data_hash = hashlib.md5(data_str.encode()).hexdigest()
+        pdf_filename = f"{company_details['company_name']}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+        company_details = st.session_state.company_details.copy()
+        company_details["shipping_fee"] = st.session_state.shipping_fee
+        company_details["installation_fee"] = st.session_state.installation_fee
+        
+        pdf_file = build_pdf_cached_tech(data_hash, final_total, company_details)
 
         # 👉 Prepare record
         new_record = {
@@ -2461,5 +3225,6 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
+
 
 
