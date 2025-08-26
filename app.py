@@ -25,6 +25,7 @@ from reportlab.graphics.shapes import Drawing, Path
 from reportlab.platypus import Flowable
 from reportlab.lib import colors
 from reportlab.platypus import Image as RLImage
+import json
 
 # ========== Page Config ==========
 st.set_page_config(page_title="Quotation Builder", page_icon="🪑", layout="wide")
@@ -3194,6 +3195,7 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
+
 
 
 
