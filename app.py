@@ -2190,7 +2190,6 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
 
 
 
-# #################### technical offer###################
 @st.cache_data
 def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png", 
                     intro_path="FT-Quotation-Temp-1.jpg", closure_path="FT-Quotation-Temp-2.jpg",
@@ -2497,16 +2496,16 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
 
             # Flakeekeke image
             flake_image = Paragraph("Flakeekeke Image Not Found", styles['Normal'])
-            flake_image_path = "Screenshot 2025-08-26 111602.png"
+            flake_image_path = "WhatsApp Image 2025-08-26 at 12.07.39_c4c9d9b4.jpg"
             if os.path.exists(flake_image_path):
                 try:
                     img = RLImage(flake_image_path)
-                    img.drawWidth = 250  # Increased width to stretch
-                    img.drawHeight = 100
+                    img.drawWidth = 300  # Increased width to stretch
+                    img.drawHeight = 50
                     # Wrap image in a table to apply left indent
-                    flake_image_table = Table([[img]], colWidths=[150], rowHeights=[100])
+                    flake_image_table = Table([[img]], colWidths=[300], rowHeights=[50])
                     flake_image_table.setStyle(TableStyle([
-                        ('LEFTPADDING', (0, 0), (-1, -1), 100),  # Shift right to align with product name
+                        ('LEFTPADDING', (0, 0), (-1, -1), 110),  # Shift right to align with product name
                         ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
                     ]))
                     flake_image = flake_image_table
@@ -2516,6 +2515,16 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
             else:
                 print(f"Flakeekeke image not found at: {flake_image_path}")
 
+            # Horizontal line under flakeekeke image
+            hr_data_flake = [["","","",""]]  
+            hr_table_flake = Table(hr_data_flake, colWidths=[80, 350], rowHeights=4)
+
+            hr_table_flake.setStyle(TableStyle([
+                ('BACKGROUND', (1, 0), (1, 0), colors.darkorange),  # only color the second column
+                ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
+            ]))
+
+
             # Product Name
             product_name_para = Paragraph(safe_str(r.get('Item', 'Product Name')), product_name_style)
 
@@ -2523,10 +2532,11 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
             cat_warr_text = f"<b>Category:</b> Reception & Seating<br/><b>Warranty:</b> {safe_str(r.get('Warranty', '2 Years'))}"
             cat_warr_para = Paragraph(cat_warr_text, cat_warr_style)
 
-            # Right column content: flakeekeke image, spacer, name, cat_warr, overview title, overview
+            # Right column content: flakeekeke image, hr, spacer, name, cat_warr, overview title, overview
             right_content_data = [
                 [flake_image],
-                [Spacer(1, 10)],  # Small spacer to shift content down slightly
+                [hr_table_flake],  # New horizontal line under flakeekeke image
+                [Spacer(1, 5)],  # Reduced spacer to move image up slightly
                 [product_name_para],
                 [cat_warr_para],
                 [overview_title],
@@ -2541,7 +2551,7 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
             # Create side-by-side layout
             side_data = [[img_element, right_content_table]]
             side_col_widths = [180, 420]
-            side_table = Table(side_data, colWidths=side_col_widths, rowHeights=260)  # Slightly increased height to accommodate stretched image
+            side_table = Table(side_data, colWidths=side_col_widths, rowHeights=260)  # Height accommodates layout
             side_table.setStyle(TableStyle([
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                 ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
@@ -3225,6 +3235,7 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
+
 
 
 
