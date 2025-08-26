@@ -1955,12 +1955,12 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 if temp_img_path:
                     try:
                         img = RLImage(temp_img_path)
-                        img.drawWidth = 140   # Slightly larger for better quality
-                        img.drawHeight = 150  # Fits within row height
+                        img.drawWidth = 300   # Slightly larger for better quality
+                        img.drawHeight = 300  # Fits within row height
                         img.hAlign = 'CENTER'
                         img.vAlign = 'MIDDLE'
                         img.preserveAspectRatio = True
-                        img_component = KeepInFrame(95, 75, [img], mode='shrink')
+                        img_component = KeepInFrame(200, 150, [img], mode='shrink')
                         img_element = img_component
                         temp_files.append(temp_img_path)
                     except Exception as e:
@@ -3194,6 +3194,7 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
+
 
 
 
