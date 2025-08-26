@@ -2861,7 +2861,7 @@ def load_user_history_from_sheet(user_email, sheet):
 
 # Before generating PDF
 
-if st.button("📅 Generate finance Quotation ") and output_data:
+if st.button("📅 Generate financial Quotation ") and output_data:
     with st.spinner("Generating PDF and saving to cloud history..."):
         st.session_state.pdf_data = output_data
         data_str = str(output_data) + str(final_total) + str(company_details)
@@ -3155,6 +3155,7 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
+
 
 
 
