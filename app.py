@@ -2284,12 +2284,50 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
             return "" if is_empty(val) else f"{float(val):.2f}"
 
         def convert_google_drive_url_for_storage(url):
-            # Placeholder function - replace with actual implementation
-            return url
+            """Convert Google Drive sharing URL to direct download URL"""
+            if not url:
+                return url
+            
+            # Extract file ID from various Google Drive URL formats
+            if '/file/d/' in url:
+                file_id = url.split('/file/d/')[1].split('/')[0]
+                return f"https://drive.google.com/uc?export=download&id={file_id}"
+            elif 'id=' in url:
+                file_id = url.split('id=')[1].split('&')[0]
+                return f"https://drive.google.com/uc?export=download&id={file_id}"
+            else:
+                return url
 
-        def download_image_for_pdf(url, max_size):
-            # Placeholder function - replace with actual implementation
-            return None
+        def download_image_for_pdf(url, max_size=(300, 300)):
+            """Download and resize image for PDF inclusion"""
+            try:
+                import requests
+                from PIL import Image as PILImage
+                from io import BytesIO
+                import tempfile
+                
+                response = requests.get(url, timeout=5)
+                response.raise_for_status()
+                img = PILImage.open(BytesIO(response.content)).convert("RGB")
+                img_ratio = img.width / img.height
+                max_width, max_height = max_size
+                
+                if img.width > max_width or img.height > max_height:
+                    if img_ratio > 1:
+                        new_width = max_width
+                        new_height = int(max_width / img_ratio)
+                    else:
+                        new_height = max_height
+                        new_width = int(max_height * img_ratio)
+                    img = img.resize((new_width, new_height), PILImage.Resampling.LANCZOS)
+                
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+                img.save(temp_file, format="PNG")
+                temp_file.close()
+                return temp_file.name
+            except Exception as e:
+                print(f"Image download/resize failed: {e}")
+                return None
 
         data_from_hash = data
         has_discounts = any(float(item.get('Discount %', 0)) > 0 for item in data_from_hash)
@@ -2412,7 +2450,7 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
             img_element = Paragraph("No Image", styles['Normal'])
             if r.get("Image"):
                 download_url = convert_google_drive_url_for_storage(r["Image"])
-                temp_img_path = download_image_for_pdf(download_url, max_size=(300, 300))
+                temp_img_path = download_image_for_pdf(download_url, max_size=(300, 300)) 
                 if temp_img_path and os.path.exists(temp_img_path):
                     try:
                         # Create a custom flowable with rounded border
@@ -2813,6 +2851,7 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
 
 
 
+
 def load_user_history_from_sheet(user_email, sheet):
     """Load user's quotation history from Google Sheet with fallbacks"""
     if sheet is None:
@@ -3155,6 +3194,7 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
+
 
 
 
