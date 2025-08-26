@@ -1816,7 +1816,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             if page_num >= content_start_page and (closure_page_num is None or page_num < closure_page_num):
                 canvas.setFont('Helvetica', 10)
                 content_page_num = page_num - content_start_page + 1
-                canvas.drawRightString(doc.width + doc.leftMargin, 40, f"Page {content_page_num}")
+                canvas.drawRightString(doc.width + doc.leftMargin, 40, f"{content_page_num}")
             
             canvas.restoreState()
 
@@ -2451,5 +2451,6 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
+
 
 
