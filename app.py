@@ -1769,6 +1769,7 @@ def download_image_for_pdf(url, max_size=(300, 300)):
         print(f"Image download/resize failed: {e}")
         return None
 
+# ##################financail offer###################
 @st.cache_data
 def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png", 
                     intro_path="FT-Quotation-Temp-financial.jpg", closure_path="FT-Quotation-Temp-2.jpg",
@@ -1831,7 +1832,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             if page_num >= content_start_page and (closure_page_num is None or page_num < closure_page_num):
                 canvas.setFont('Helvetica', 10)
                 content_page_num = page_num - content_start_page + 1
-                canvas.drawRightString(doc.width + doc.leftMargin, 40, f"{content_page_num}")
+                canvas.drawRightString(doc.width + doc.leftMargin, 40, f"Page {content_page_num}")
             
             canvas.restoreState()
 
@@ -1931,12 +1932,12 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         total_after_discount = total if overall_disc_amount > 0 else subtotal_after
 
         # === Headers ===
-        base_headers = ["Ser.", "Item", "Image", "SKU", "Specs", "QTY", "Before Disc.", "Net Price", "Total"]
+        base_headers = ["Ser.", "Item", "Image", "SKU", "Specs", "QTY", "B.D.", "Net Price", "Total"]
         if has_discounts:
             base_headers.insert(8, "Disc %")
 
         # === Column Widths (optimized for A3) ===
-        col_widths = [30, 90, 120, 55, 130, 45, 65, 65, 65]  # Total: ~700pt
+        col_widths = [30, 75, 145, 55, 130, 45, 55, 65, 65]  # Total: ~700pt
         if has_discounts:
             col_widths.insert(8, 55)  # "Disc %" column
         else:
@@ -1955,8 +1956,8 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 if temp_img_path:
                     try:
                         img = RLImage(temp_img_path)
-                        img.drawWidth = 90   # Slightly larger for better quality
-                        img.drawHeight = 70  # Fits within row height
+                        img.drawWidth = 140   # Slightly larger for better quality
+                        img.drawHeight = 150  # Fits within row height
                         img.hAlign = 'CENTER'
                         img.vAlign = 'MIDDLE'
                         img.preserveAspectRatio = True
@@ -2016,7 +2017,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         top_margin = 100
         bottom_margin = 250
         header_height = 25  # Table header height
-        row_height = 95     # Estimated height per row (including images)
+        row_height = 150     # Estimated height per row (including images)
         summary_table_height = 200  # Space reserved for summary table
         spacer_height = 30  # Space for spacers
         
@@ -2185,17 +2186,31 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
     # Pass the actual data
     return build_pdf(st.session_state.pdf_data, total, company_details, hdr_path, ftr_path, 
                     intro_path, closure_path, bg_path)
-# ========== Generate PDF & Save to History ==========
 
 
 
 
+
+
+
+
+# #################### technical offer###################
 @st.cache_data
 def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png", 
-                    intro_path="FT-Quotation-Temp-1.jpg", closure_path="FT-Quotation-Temp-2.jpg",
-                    bg_path="FT Quotation Temp[1](1).jpg"):
+                         intro_path="FT-Quotation-Temp-1.jpg", closure_path="FT-Quotation-Temp-2.jpg",
+                         bg_path="FT Quotation Temp[1](1).jpg"):
     
     def build_pdf(data, total, company_details, hdr_path, ftr_path, intro_path, closure_path, bg_path):
+        import tempfile
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Table, TableStyle, Flowable
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A3
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.platypus import Image as RLImage
+        import os
+        import pandas as pd
+        import re
+
         # Create temp file
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
         pdf_path = tmp.name
@@ -2260,64 +2275,6 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
         if intro_path and os.path.exists(intro_path):
             elems.append(PageBreak())
 
-        # === Company Details ===
-        # detail_lines = [
-        #     "<para align='left'><font size=14>",
-        #     f"<b>Date:</b> <font color='black'>{company_details['current_date']}</font><br/>",
-        #     f"<b>Valid Till:</b> <font color='black'>{company_details['valid_till']}</font><br/>",
-        #     f"<b>Quotation Validity:</b> <font color='black'>{company_details['quotation_validity']}</font><br/>",
-        #     f"<b>Prepared By:</b> <font color='black'>{company_details['prepared_by']}</font><br/>",
-        #     f"<b>Email:</b> <font color='black'>{company_details['prepared_by_email']}</font><br/><br/>",
-        #     f"<b>Contact Person:</b> <font color='black'>{company_details['contact_person']}</font><br/>",
-        #     f"<b>Company Name:</b> <font color='black'>{company_details['company_name']}</font><br/>",
-        # ]
-        # if company_details.get("address"):
-        #     detail_lines.append(f"<b>Address:</b> <font color='black'>{company_details['address']}</font><br/>")
-        # detail_lines.append(f"<b>Cell Phone:</b> <font color='black'>{company_details['contact_phone']}</font><br/>")
-        # if company_details.get("contact_email"):
-        #     detail_lines.append(f"<b>Contact Email:</b> <font color='black'>{company_details['contact_email']}</font><br/>")
-        # detail_lines.append("</font></para>")
-        # details = "".join(detail_lines)
-        
-        # elems.append(Spacer(1, 20))
-        # elems.append(Paragraph(details, aligned_style))
-
-        # # === Terms & Conditions ===
-        # terms_conditions = f"""
-        # <para align="left">
-        # <font size=14>
-        # <b>Terms and Conditions:</b><br/>
-        # • Warranty: {company_details['warranty']}<br/>
-        # • Down payment: {company_details['down_payment']}% of the total invoice<br/>
-        # • Delivery: {company_details['delivery']}<br/>
-        # • {company_details['vat_note']}<br/>
-        # • {company_details['shipping_note']}<br/>
-        # </font>
-        # </para>
-        # """
-        # elems.append(Spacer(1, 15))
-        # elems.append(Paragraph(terms_conditions, aligned_style))
-
-        # # === Payment Info ===
-        # payment_info = f"""
-        # <para align="left">
-        # <font size=14>
-        # <b>Payment Info:</b><br/>
-        # <b>Bank:</b> <font color="black">{company_details['bank']}</font><br/>
-        # <b>IBAN:</b> <font color="black">{company_details['iban']}</font><br/>
-        # <b>Account Number:</b> <font color="black">{company_details['account_number']}</font><br/>
-        # <b>Company:</b> <font color="black">{company_details['company']}</font><br/>
-        # <b>Tax ID:</b> <font color="black">{company_details['tax_id']}</font><br/>
-        # <b>Commercial/Chamber Reg. No:</b> <font color="black">{company_details['reg_no']}</font>
-        # </font>
-        # </para>
-        # """
-        # elems.append(Spacer(1, 15))
-        # elems.append(Paragraph(payment_info, aligned_style))
-        
-        # # Always start products on new page
-        # elems.append(PageBreak())
-
         def is_empty(val):
             return pd.isna(val) or val is None or str(val).lower() == 'nan'
 
@@ -2326,6 +2283,14 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
 
         def safe_float(val):
             return "" if is_empty(val) else f"{float(val):.2f}"
+
+        def convert_google_drive_url_for_storage(url):
+            # Placeholder function - replace with actual implementation
+            return url
+
+        def download_image_for_pdf(url, max_size):
+            # Placeholder function - replace with actual implementation
+            return None
 
         data_from_hash = data
         has_discounts = any(float(item.get('Discount %', 0)) > 0 for item in data_from_hash)
@@ -2342,8 +2307,6 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
             subtotal_after += discounted_price * qty
 
         discount_amount = subtotal_before - subtotal_after
-
-        # Calculate overall discount if applicable
         overall_disc_amount = max(subtotal_after - total, 0.0) if abs(subtotal_after - total) > 0.01 else 0.0
         total_after_discount = total if overall_disc_amount > 0 else subtotal_after
 
@@ -2407,7 +2370,7 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
             textColor=colors.orange,
             spaceBefore=12,
             spaceAfter=6,
-            leftIndent=42 # Shift features to the right
+            leftIndent=42  # Shift features to the right
         )
 
         bullet_style = ParagraphStyle(
@@ -2524,7 +2487,6 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
                 ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
             ]))
 
-
             # Product Name
             product_name_para = Paragraph(safe_str(r.get('Item', 'Product Name')), product_name_style)
 
@@ -2592,7 +2554,7 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
                 ["Certification", ""],
                 ["Maintenance", ""],
             ]
-            specs_col_widths = [150, 50]  
+            specs_col_widths = [100, 100]  
             specs_table = Table(specs_data, colWidths=specs_col_widths, rowHeights=[30]*8)  # Increased row height to 30
             specs_table.setStyle(TableStyle([
                 ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
@@ -2667,23 +2629,37 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
             # Warranty bar
             warranty_label = Paragraph("Warranty", bar_label_style)
             total_bar_width = 300
-            warranty_years = 2  # Default; parse if needed
-            if r.get('Warranty'):
+            warranty_years = 0  # Default to 0
+            if r.get('Warranty') is not None:
+                warranty_value = r['Warranty']
                 try:
-                    warranty_years = int(safe_str(r['Warranty']).split()[0])
-                except:
-                    pass
+                    if isinstance(warranty_value, (int, float)):
+                        warranty_years = float(warranty_value)
+                    elif isinstance(warranty_value, str):
+                        # Extract numeric part from strings like "1year", "1 Year", "1 yrs"
+                        match = re.match(r'(\d+\.?\d*)\s*(?:year|yrs)?', safe_str(warranty_value), re.IGNORECASE)
+                        warranty_years = float(match.group(1)) if match else 0
+                    print(f"Parsed warranty_years: {warranty_years} for product {r.get('Item', 'Unknown')}")
+                except Exception as e:
+                    print(f"Error parsing warranty for product {r.get('Item', 'Unknown')}: {e}")
+                    warranty_years = 0
 
-            # Calculate filled width based on warranty years
-            filled_width = (warranty_years / 10.0) * total_bar_width
+            # Ensure filled_width is positive and not exceeding total_bar_width
+            filled_width = max(0, min((warranty_years / 10.0) * total_bar_width, total_bar_width))
+            print(f"Calculated filled_width: {filled_width} for warranty_years: {warranty_years}")
 
             # Create the main bar
-            bar_data = [["", ""]]
-            bar_col_widths = [filled_width, total_bar_width - filled_width]
+            if filled_width > 0:
+                bar_data = [["", ""]]
+                bar_col_widths = [filled_width, total_bar_width - filled_width]
+            else:
+                bar_data = [[""]]
+                bar_col_widths = [total_bar_width]  # Full bar unfilled if warranty is 0 or invalid
+
             bar_table = Table(bar_data, colWidths=bar_col_widths, rowHeights=10)
             bar_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (0, 0), colors.black),
-                ('BACKGROUND', (1, 0), (1, 0), colors.lightgrey),
+                ('BACKGROUND', (0, 0), (0, 0), colors.black),  # Filled portion
+                ('BACKGROUND', (1, 0), (1, 0), colors.lightgrey) if filled_width > 0 else ('BACKGROUND', (0, 0), (0, 0), colors.lightgrey),  # Unfilled portion or full bar if no fill
                 ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
             ]))
 
@@ -2806,60 +2782,6 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
             ]))
             elems.append(bottom_table)
 
-        # Add summary table after all products
-        # elems.append(PageBreak())  # Start summary on new page if desired, or remove to attach to last product
-
-        # === Summary Table ===
-        # vat_rate = company_details.get("vat_rate", 0.14)
-        # shipping_fee = float(company_details.get("shipping_fee", 0.0))
-        # installation_fee = float(company_details.get("installation_fee", 0.0))
-        # vat = (shipping_fee + total_after_discount) * vat_rate
-        # grand_total = total_after_discount + shipping_fee + installation_fee + vat
-
-        # summary_data = []
-        # has_any_discount = (discount_amount > 0 or overall_disc_amount > 0)
-        # if has_any_discount:
-        #     summary_data.append(["Subtotal Before Discounts", f"{subtotal_before:.2f} EGP"])
-        #     if discount_amount > 0:
-        #         summary_data.append(["Special Discount", f"- {discount_amount:.2f} EGP"])
-        #     if overall_disc_amount > 0:
-        #         summary_data.append(["Overall Discount", f"- {overall_disc_amount:.2f} EGP"])
-        #     summary_data.append(["Total After Discounts", f"{total_after_discount:.2f} EGP"])
-        # else:
-        #     summary_data.append(["Total", f"{total_after_discount:.2f} EGP"])
-
-        # if shipping_fee > 0:
-        #     summary_data.append(["Shipping Fee", f"{shipping_fee:.2f} EGP"])
-        # if installation_fee > 0:
-        #     summary_data.append(["Installation Fee", f"{installation_fee:.2f} EGP"])
-
-        # summary_data.append([f"VAT ({int(vat_rate * 100)}%)", f"{vat:.2f} EGP"])
-        # summary_data.append(["Grand Total", f"{grand_total:.2f} EGP"])
-
-        # # Collect discount row indices for styling
-        # discount_row_indices = [i for i, row in enumerate(summary_data) if "Discount" in row[0]]
-
-        # summary_col_widths = [400, 200]
-        # summary_table = Table(summary_data, colWidths=summary_col_widths)
-
-        # # Base styles
-        # summary_styles = [
-        #     ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-        #     ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-        #     ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-        #     ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-        #     ('FONTSIZE', (0, 0), (-1, -1), 12),
-        #     ('GRID', (0, 0), (-1, -1), 1.0, colors.black),
-        #     ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
-        # ]
-
-        # # Add red text for discount amounts
-        # for row_idx in discount_row_indices:
-        #     summary_styles.append(('TEXTCOLOR', (1, row_idx), (1, row_idx), colors.black))
-
-        # summary_table.setStyle(TableStyle(summary_styles))
-        # elems.append(summary_table)
-
         # === Closure Page ===
         if closure_path and os.path.exists(closure_path):
             elems.append(PageBreak())
@@ -2882,12 +2804,12 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
         return pdf_path
 
     # Ensure data is in session state
+    import streamlit as st
     st.session_state.pdf_data = st.session_state.get('pdf_data', [])
 
     # Pass the actual data
     return build_pdf(st.session_state.pdf_data, total, company_details, hdr_path, ftr_path, 
                     intro_path, closure_path, bg_path)
-
 
 
 
@@ -3068,7 +2990,6 @@ if st.button("📅 Generate technical Quotation ") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
-
 def create_zoho_quote(company_details, items, final_total, shipping_fee=0, installation_fee=0):
     token = get_zoho_access_token()
     owner_id = company_details.get("quote_owner_id")
@@ -3235,6 +3156,7 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
+
 
 
 
