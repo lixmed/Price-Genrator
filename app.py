@@ -1949,15 +1949,15 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
 
         # === Build Product Table Data with Optimized Images ===
         def create_product_row(r, idx):
-            img_element = "No Image"
+            img_element = Paragraph("No Image", styleN)
             if r.get("Image"):
                 download_url = convert_google_drive_url_for_storage(r["Image"])
-                temp_img_path = download_image_for_pdf(download_url, max_size=(300, 300))  # Optimized size
-                if temp_img_path:
+                temp_img_path = download_image_for_pdf(download_url, max_size=(300, 300))
+                if temp_img_path and os.path.exists(temp_img_path):
                     try:
                         img = RLImage(temp_img_path)
-                        img.drawWidth = 300   # Slightly larger for better quality
-                        img.drawHeight = 300  # Fits within row height
+                        img.drawWidth = 300
+                        img.drawHeight = 300
                         img.hAlign = 'CENTER'
                         img.vAlign = 'MIDDLE'
                         img.preserveAspectRatio = True
@@ -1965,15 +1965,13 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                         img_element = img_component
                         temp_files.append(temp_img_path)
                     except Exception as e:
-                        print(f"Error creating image element: {e}")
-                        img_element = "Image Error"
+                        print(f"Error creating image element for {r.get('Item', 'Unknown')}: {e}")
+                        img_element = Paragraph("Image Error", styleN)
 
-            # Optimized description formatting
             desc_text = safe_str(r.get('Description'))
             color_text = safe_str(r.get('Color'))
             warranty_text = safe_str(r.get('Warranty'))
             
-            # Truncate if too long but keep important info
             if len(desc_text) > 60:
                 desc_text = desc_text[:60] + "..."
             
@@ -1988,7 +1986,6 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             disc_pct = float(r.get('Discount %', 0))
             net_price = unit_price * (1 - disc_pct / 100)
 
-            # Truncate item name if too long
             item_name = safe_str(r.get('Item'))
             if len(item_name) > 35:
                 item_name = item_name[:35] + "..."
@@ -2012,51 +2009,73 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             return row
 
         # === Calculate maximum rows per page based on available space ===
-        # Available page height calculation
-        page_height = A3[1]  # A3 height
+        page_height = A3[1]
         top_margin = 100
         bottom_margin = 250
-        header_height = 25  # Table header height
-        row_height = 150     # Estimated height per row (including images)
-        summary_table_height = 200  # Space reserved for summary table
-        spacer_height = 30  # Space for spacers
+        header_height = 25
+        row_height = 150
+        summary_row_height = 25  # Estimated height per summary table row
+        spacer_height = 30
         
         available_height = page_height - top_margin - bottom_margin - header_height - spacer_height
         
-        # Calculate rows per page dynamically
-        def calculate_rows_per_page(is_last_chunk=False):
+        def calculate_rows_per_page(is_last_chunk=False, include_summary=False):
             height_for_table = available_height
-            if is_last_chunk:
-                height_for_table -= summary_table_height  # Reserve space for summary on last page
-            
+            if is_last_chunk and include_summary:
+                summary_rows = len(summary_data)  # Will be defined later
+                summary_height = summary_rows * summary_row_height
+                height_for_table -= summary_height
             max_rows = max(1, int(height_for_table // row_height))
-            return min(max_rows, 8)  # Cap at 8 rows for safety
-        
-        # Split products into optimized chunks
+            return min(max_rows, 8)
+
+        # === Build Summary Table Data ===
+        vat_rate = company_details.get("vat_rate", 0.14)
+        shipping_fee = float(company_details.get("shipping_fee", 0.0))
+        installation_fee = float(company_details.get("installation_fee", 0.0))
+        vat = (shipping_fee + total_after_discount) * vat_rate
+        grand_total = total_after_discount + shipping_fee + installation_fee + vat
+
+        summary_data = []
+        has_any_discount = (discount_amount > 0 or overall_disc_amount > 0)
+        if has_any_discount:
+            summary_data.append(["Subtotal Before Discounts", f"{subtotal_before:.2f} EGP"])
+            if discount_amount > 0:
+                summary_data.append(["Special Discount", f"- {discount_amount:.2f} EGP"])
+            if overall_disc_amount > 0:
+                summary_data.append(["Overall Discount", f"- {overall_disc_amount:.2f} EGP"])
+            summary_data.append(["Total After Discounts", f"{total_after_discount:.2f} EGP"])
+        else:
+            summary_data.append(["Total", f"{total_after_discount:.2f} EGP"])
+
+        if shipping_fee > 0:
+            summary_data.append(["Shipping Fee", f"{shipping_fee:.2f} EGP"])
+        if installation_fee > 0:
+            summary_data.append(["Installation Fee", f"{installation_fee:.2f} EGP"])
+
+        summary_data.append([f"VAT ({int(vat_rate * 100)}%)", f"{vat:.2f} EGP"])
+        summary_data.append(["Grand Total", f"{grand_total:.2f} EGP"])
+
+        # Split products into chunks
         product_chunks = []
         remaining_products = data_from_hash[:]
         
         while remaining_products:
-            is_last_chunk = len(remaining_products) <= calculate_rows_per_page(True)
-            rows_for_this_page = calculate_rows_per_page(is_last_chunk)
+            is_last_chunk = len(remaining_products) <= calculate_rows_per_page(True, include_summary=True)
+            rows_for_this_page = calculate_rows_per_page(is_last_chunk, include_summary=True)
             
-            # Take products for this page
             chunk = remaining_products[:rows_for_this_page]
             product_chunks.append(chunk)
             remaining_products = remaining_products[rows_for_this_page:]
 
-        # Create tables for each optimized chunk
+        # Create tables for each chunk
         for chunk_idx, chunk in enumerate(product_chunks):
             is_last_chunk = (chunk_idx == len(product_chunks) - 1)
             
-            # Create table data for this chunk
-            chunk_table_data = [base_headers]  # Always include headers
-            
+            chunk_table_data = [base_headers]
             for idx, r in enumerate(chunk, start=sum(len(c) for c in product_chunks[:chunk_idx]) + 1):
                 row = create_product_row(r, idx)
                 chunk_table_data.append(row)
 
-            # Create table for this chunk with optimized styling
             chunk_table = Table(chunk_table_data, colWidths=col_widths)
             chunk_table.setStyle(TableStyle([
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -2074,57 +2093,36 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
             ]))
             
-            # Wrap table with padding - CRITICAL CHANGES HERE
             outer_data = [[chunk_table]]
-            # For the last chunk, remove bottom padding to eliminate space before summary table
             bottom_padding = 0 if is_last_chunk else 10
             outer_style = TableStyle([
                 ('LEFTPADDING', (0, 0), (0, 0), 50),
                 ('RIGHTPADDING', (0, 0), (0, 0), 0),
                 ('TOPPADDING', (0, 0), (0, 0), 0),
-                ('BOTTOMPADDING', (0, 0), (0, 0), bottom_padding),  # Set to 0 for last chunk
+                ('BOTTOMPADDING', (0, 0), (0, 0), bottom_padding),
                 ('GRID', (0, 0), (0, 0), 0, colors.transparent),
             ])
             outer_table = Table(outer_data, colWidths=[total_table_width], style=outer_style)
             elems.append(outer_table)
             
-            # Add summary table only to the last chunk
             if is_last_chunk:
-                # === Summary Table (on the same page as last product chunk) ===
-                vat_rate = company_details.get("vat_rate", 0.14)
-                shipping_fee = float(company_details.get("shipping_fee", 0.0))
-                installation_fee = float(company_details.get("installation_fee", 0.0))
-                vat = (shipping_fee + total_after_discount) * vat_rate
-                grand_total = total_after_discount + shipping_fee + installation_fee + vat
-
-                summary_data = []
-                has_any_discount = (discount_amount > 0 or overall_disc_amount > 0)
-                if has_any_discount:
-                    summary_data.append(["Subtotal Before Discounts", f"{subtotal_before:.2f} EGP"])
-                    if discount_amount > 0:
-                        summary_data.append(["Special Discount", f"- {discount_amount:.2f} EGP"])
-                    if overall_disc_amount > 0:
-                        summary_data.append(["Overall Discount", f"- {overall_disc_amount:.2f} EGP"])
-                    summary_data.append(["Total After Discounts", f"{total_after_discount:.2f} EGP"])
-                else:
-                    summary_data.append(["Total", f"{total_after_discount:.2f} EGP"])
-
-                if shipping_fee > 0:
-                    summary_data.append(["Shipping Fee", f"{shipping_fee:.2f} EGP"])
-                if installation_fee > 0:
-                    summary_data.append(["Installation Fee", f"{installation_fee:.2f} EGP"])
-
-                summary_data.append([f"VAT ({int(vat_rate * 100)}%)", f"{vat:.2f} EGP"])
-                summary_data.append(["Grand Total", f"{grand_total:.2f} EGP"])
-
-                # Collect discount row indices for styling
+                # Check if summary table fits on the same page
+                summary_rows = len(summary_data)
+                summary_height = summary_rows * summary_row_height
+                product_rows = len(chunk)
+                product_height = product_rows * row_height + header_height
+                total_content_height = product_height + summary_height
+                
+                summary_on_new_page = total_content_height > available_height
+                
+                if summary_on_new_page:
+                    elems.append(PageBreak())
+                
+                # Create summary table
                 discount_row_indices = [i for i, row in enumerate(summary_data) if "Discount" in row[0]]
-
                 summary_col_widths = [total_table_width - 150, 150]
                 summary_table = Table(summary_data, colWidths=summary_col_widths)
-
-                # Base styles
-                summary_styles = [
+                summary_table.setStyle(TableStyle([
                     ('ALIGN', (0, 0), (0, -1), 'LEFT'),
                     ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
                     ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
@@ -2132,40 +2130,29 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                     ('FONTSIZE', (0, 0), (-1, -1), 12),
                     ('GRID', (0, 0), (-1, -1), 1.0, colors.black),
                     ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
-                ]
-
-                # Add red text for discount amounts
-                for row_idx in discount_row_indices:
-                    summary_styles.append(('TEXTCOLOR', (1, row_idx), (1, row_idx), colors.black))
-
-                summary_table.setStyle(TableStyle(summary_styles))
-
-                # Add summary table with NO TOP PADDING - CRITICAL CHANGE
+                    *[('TEXTCOLOR', (1, i), (1, i), colors.black) for i in discount_row_indices],
+                ]))
+                
                 outer_summary_data = [[summary_table]]
                 outer_summary_style = TableStyle([
                     ('LEFTPADDING', (0, 0), (0, 0), 50),
                     ('RIGHTPADDING', (0, 0), (0, 0), 0),
-                    ('TOPPADDING', (0, 0), (0, 0), 0),  # Must be 0 to eliminate space
+                    ('TOPPADDING', (0, 0), (0, 0), 0),
                     ('BOTTOMPADDING', (0, 0), (0, 0), 0),
                     ('GRID', (0, 0), (0, 0), 0, colors.transparent),
                 ])
                 outer_summary = Table(outer_summary_data, colWidths=[total_table_width], style=outer_summary_style)
                 elems.append(outer_summary)
             else:
-                # Add page break between chunks (except for the last chunk)
                 elems.append(PageBreak())
 
-        # === Closure Page - CRITICAL FIX: ADD CONTENT TO THIS PAGE ===
+        # === Closure Page ===
         if closure_path and os.path.exists(closure_path):
-            # Add a page break followed by a spacer to create a non-empty page
             elems.append(PageBreak())
-            # Add a spacer to ensure the page has content (prevents ReportLab from optimizing it away)
             elems.append(Spacer(1, 1))
-            # Calculate closure page number AFTER adding all elements
-            # The closure page is the last page (total number of PageBreaks + 1)
             closure_page_num = len([e for e in elems if isinstance(e, PageBreak)]) + 1
 
-        # Build PDF - SIMPLIFIED TO A SINGLE BUILD PASS
+        # Build PDF
         try:
             doc.build(elems, onFirstPage=header_footer, onLaterPages=header_footer)
         except Exception as e:
@@ -2174,16 +2161,14 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         finally:
             for temp_file in temp_files:
                 try:
-                    os.unlink(temp_file)
+                    if os.path.exists(temp_file):
+                        os.unlink(temp_file)
                 except Exception as e:
                     print(f"Failed to delete temp file: {e}")
 
         return pdf_path
 
-    # Ensure data is in session state
     st.session_state.pdf_data = st.session_state.get('pdf_data', [])
-
-    # Pass the actual data
     return build_pdf(st.session_state.pdf_data, total, company_details, hdr_path, ftr_path, 
                     intro_path, closure_path, bg_path)
 
@@ -3196,6 +3181,7 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
+
 
 
 
