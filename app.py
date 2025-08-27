@@ -20,11 +20,6 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from reportlab.platypus import KeepInFrame
-from reportlab.lib.colors import orange
-from reportlab.graphics.shapes import Drawing, Path
-from reportlab.platypus import Flowable
-from reportlab.lib import colors
-from reportlab.platypus import Image as RLImage
 import json
 
 # ========== Page Config ==========
@@ -1270,6 +1265,9 @@ if st.session_state.role == "admin":
                         quote_owner_id = matched_user["id"]
                         quote_owner_name = matched_user["name"]
                         quote_owner_email = matched_user["email"]
+
+                        prepared_by = quote_owner_name
+                        prepared_by_email = quote_owner_email
                         
                         # You can optionally add a "Change Owner" button here for rare cases
                         # if st.button("Change Quote Owner"):
@@ -1292,11 +1290,7 @@ if st.session_state.role == "admin":
                             quote_owner_id = None
                             quote_owner_name = st.session_state.username
                             quote_owner_email = current_user_email
-                else:
-                    # Regular users: use their own info
-                    quote_owner_id = get_zoho_user_id(st.session_state.user_email)
-                    quote_owner_name = st.session_state.username
-                    quote_owner_email = st.session_state.user_email
+
 
                 prepared_by = quote_owner_name  # Set prepared_by to quote owner
                 prepared_by_email = quote_owner_email  # Set prepared_by_email to quote owner
@@ -1311,6 +1305,9 @@ if st.session_state.role == "admin":
                     if not re.match(phone_pattern, contact_phone):
                         st.error("❌ Invalid phone number format. Please use digits only (e.g., +201234567890).")
                     # Validate required fields
+                    
+
+                    
                     elif not all([company_name, contact_person, contact_phone]):
                         st.warning("⚠ Please fill in all required fields (Company Name, Contact Person, and Contact Phone).")
                     else:
@@ -1361,13 +1358,12 @@ if st.session_state.role == "admin":
             if not st.session_state.get('form_submitted', False):
                 st.warning("⚠ Please fill in your company details to continue")
                 st.stop()
-            st.stop()
 
 
 elif st.session_state.role == "buyer":
     st.header("🛍  Buy Products & Get Quotation")
     
-    # ADD THIS CRITICAL SECTION - Entry point for new quotations
+  
     if 'quotation_in_progress' not in st.session_state:
         st.subheader("Get Started with Your Quotation")
         st.info("Click below to begin creating your quotation")
@@ -1376,7 +1372,8 @@ elif st.session_state.role == "buyer":
             st.session_state.form_submitted = False
             st.session_state.edit_mode = False
             st.rerun()
-    
+        st.stop()
+
     # Only proceed if quotation process has been started
     if st.session_state.get('quotation_in_progress', False):
         # Handle post-submission options
@@ -1384,7 +1381,7 @@ elif st.session_state.role == "buyer":
             st.subheader("Choose an option:")
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("✏️ Edit Company Info", use_container_width=True):
+                if st.button("✏ Edit Company Info", use_container_width=True):
                     st.session_state.edit_mode = True
                     st.session_state.form_submitted = False
                     st.rerun()
@@ -1452,7 +1449,7 @@ elif st.session_state.role == "buyer":
                             st.session_state.zoho_accounts = accounts
                             st.success(f"✅ Found {len(accounts)} accounts in Zoho CRM")
                         else:
-                            st.warning("⚠️ No accounts found in Zoho CRM")
+                            st.warning("⚠ No accounts found in Zoho CRM")
                             st.session_state.zoho_accounts = None
                     except Exception as e:
                         st.error(f"❌ Failed to connect to Zoho CRM: {str(e)}")
@@ -1501,7 +1498,7 @@ elif st.session_state.role == "buyer":
                         st.success(f"✅ Company details loaded for '{selected_acc}'!")
                         st.rerun()
                 else:
-                    st.warning("⚠️ No valid account names found in Zoho data")
+                    st.warning("⚠ No valid account names found in Zoho data")
                     st.session_state.zoho_accounts = None
             
             # ALWAYS SHOW THE FORM (this is the key fix)
@@ -1546,9 +1543,43 @@ elif st.session_state.role == "buyer":
                 # Phone validation pattern
                 phone_pattern = r'^\+?\d+$'
                 
-                # System-generated fields
-                prepared_by = st.session_state.username
-                prepared_by_email = st.session_state.user_email
+                
+                # - ZOHO QUOTE OWNER SELECTION (Automatic) -
+                if st.session_state.role == "buyer":
+                    with st.spinner("📡 Loading Zoho CRM users..."):
+                        zoho_users = fetch_zoho_users()
+                        current_user_email = st.session_state.user_email.lower().strip()
+                        matched_user = next(
+                            (u for u in zoho_users if u["email"].lower().strip() == current_user_email),
+                            None
+                        )
+                        if matched_user:
+                            st.success(f"👤 Quote Owner: **{matched_user['name']}** (from Zoho CRM)")
+                            st.write(f"📧 Email: `{matched_user['email']}`")
+
+                            # ✅ Set owner details
+                            quote_owner_id = matched_user["id"]
+                            quote_owner_name = matched_user["name"]
+                            quote_owner_email = matched_user["email"]
+
+                            # ✅ CRITICAL: Define prepared_by so it can be used in form submit
+                            prepared_by = quote_owner_name
+                            prepared_by_email = quote_owner_email
+
+                        else:
+                            st.error(f"❌ Your email ({current_user_email}) was not found in Zoho CRM Active Users.")
+                            st.info("Please contact your administrator to ensure your Zoho CRM user is active.")
+
+                            # Fallback
+                            quote_owner_id = None
+                            quote_owner_name = st.session_state.username
+                            quote_owner_email = st.session_state.user_email
+
+                            # ✅ Still assign to prepared_by
+                            prepared_by = quote_owner_name
+                            prepared_by_email = quote_owner_email
+
+
                 current_date = datetime.now().strftime("%A, %B %d, %Y")
                 valid_till = (datetime.now() + timedelta(days=10)).strftime("%A, %B %d, %Y")
                 quotation_validity = "30 days"
@@ -1572,6 +1603,9 @@ elif st.session_state.role == "buyer":
                             "address": address,
                             "prepared_by": prepared_by,
                             "prepared_by_email": prepared_by_email,
+                            "quote_owner_id": quote_owner_id,
+                            "quote_owner_name": quote_owner_name,  # Save quote owner name
+                            "quote_owner_email": quote_owner_email,  # Save quote owner email
                             "current_date": current_date,
                             "valid_till": valid_till,
                             "quotation_validity": quotation_validity,
@@ -1600,8 +1634,6 @@ elif st.session_state.role == "buyer":
                 st.stop()
             st.stop
 
-
-# ========== Quotation Display Section ==========
 # ========== Quotation Display Section ==========
 if ((st.session_state.role == "buyer") or 
     (st.session_state.role == "admin" and st.session_state.get('admin_choice') == "quotation")) and \
@@ -2008,7 +2040,6 @@ def download_image_for_pdf(url, max_size=(300, 300)):
         print(f"Image download/resize failed: {e}")
         return None
 
-# ##################financail offer###################
 @st.cache_data
 def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png", 
                     intro_path="FT-Quotation-Temp-financial.jpg", closure_path="FT-Quotation-Temp-2.jpg",
@@ -2142,7 +2173,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         styleN = ParagraphStyle(name='Normal', fontSize=9, leading=10, alignment=TA_CENTER)
 
         def is_empty(val):
-            return pd.isna(val) or val is None or str(val).lower() == 'nan'
+            return pd.isna(val) or val is None or str(val).lower() == 'nan' or str(val).strip() == ''
 
         def safe_str(val):
             return "" if is_empty(val) else str(val)
@@ -2165,8 +2196,6 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             subtotal_after += discounted_price * qty
 
         discount_amount = subtotal_before - subtotal_after
-
-        # Calculate overall discount if applicable
         overall_disc_amount = max(subtotal_after - total, 0.0) if abs(subtotal_after - total) > 0.01 else 0.0
         total_after_discount = total if overall_disc_amount > 0 else subtotal_after
 
@@ -2176,15 +2205,20 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             base_headers.insert(8, "Disc %")
 
         # === Column Widths (optimized for A3) ===
-        col_widths = [30, 75, 145, 55, 130, 45, 55, 65, 65]  # Total: ~700pt
+        col_widths = [30, 75, 145, 55, 130, 45, 55, 65, 65]
         if has_discounts:
-            col_widths.insert(8, 55)  # "Disc %" column
+            col_widths.insert(8, 55)
         else:
-            # Add the discount column width to Specs column when no discount
             col_widths[4] += 55
 
         total_table_width = sum(col_widths)
         temp_files = []
+
+        # === Estimate Paragraph Height ===
+        def estimate_paragraph_height(text, style, width):
+            para = Paragraph(text, style)
+            used_width, used_height = para.wrap(width, 1000)
+            return used_height
 
         # === Build Product Table Data with Optimized Images ===
         def create_product_row(r, idx):
@@ -2207,19 +2241,25 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                         print(f"Error creating image element for {r.get('Item', 'Unknown')}: {e}")
                         img_element = Paragraph("Image Error", styleN)
 
+            # Build description with conditional Dimensions
             desc_text = safe_str(r.get('Description'))
             color_text = safe_str(r.get('Color'))
             warranty_text = safe_str(r.get('Warranty'))
+            dimensions_text = safe_str(r.get('Dimensions'))
             
-            if len(desc_text) > 60:
-                desc_text = desc_text[:60] + "..."
-            
-            details_text = (
-                f"<b>Description:</b> {desc_text}<br/>"
-                f"<b>Color:</b> {color_text}<br/>"
-                f"<b>Warranty:</b> {warranty_text}"
-            )
+            details_parts = [
+                f"<b>Description:</b> {desc_text}",
+                f"<b>Color:</b> {color_text}",
+                f"<b>Warranty:</b> {warranty_text}",
+            ]
+            if dimensions_text:
+                details_parts.append(f"<b>Dimensions:</b> {dimensions_text}")
+                
+            details_text = "<br/>".join(details_parts)
             details_para = Paragraph(details_text, desc_style)
+
+            # Estimate the height needed for the description cell
+            details_height = estimate_paragraph_height(details_text, desc_style, col_widths[4])
 
             unit_price = float(r.get('Price per item', 0))
             disc_pct = float(r.get('Discount %', 0))
@@ -2245,27 +2285,32 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 row.insert(8, Paragraph(f"{discount_val}%", styleN))
 
             row.append(Paragraph(safe_float(r.get('Total price')), styleN))
-            return row
+            return row, details_height
 
         # === Calculate maximum rows per page based on available space ===
         page_height = A3[1]
         top_margin = 100
         bottom_margin = 250
         header_height = 25
-        row_height = 150
-        summary_row_height = 25  # Estimated height per summary table row
+        base_row_height = 150
+        summary_row_height = 25
         spacer_height = 30
         
         available_height = page_height - top_margin - bottom_margin - header_height - spacer_height
         
-        def calculate_rows_per_page(is_last_chunk=False, include_summary=False):
+        def calculate_rows_per_page(is_last_chunk=False, include_summary=False, row_heights=[]):
             height_for_table = available_height
             if is_last_chunk and include_summary:
-                summary_rows = len(summary_data)  # Will be defined later
+                summary_rows = len(summary_data)
                 summary_height = summary_rows * summary_row_height
                 height_for_table -= summary_height
-            max_rows = max(1, int(height_for_table // row_height))
-            return min(max_rows, 8)
+            if row_heights:
+                total_row_height = sum(row_heights)
+                max_rows = max(1, int(height_for_table // max(row_heights)))
+                if total_row_height > height_for_table:
+                    max_rows = min(max_rows, len(row_heights))
+                return min(max_rows, 8)
+            return min(int(height_for_table // base_row_height), 8)
 
         # === Build Summary Table Data ===
         vat_rate = company_details.get("vat_rate", 0.14)
@@ -2294,28 +2339,39 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         summary_data.append([f"VAT ({int(vat_rate * 100)}%)", f"{vat:.2f} EGP"])
         summary_data.append(["Grand Total", f"{grand_total:.2f} EGP"])
 
-        # Split products into chunks
+        # Split products into chunks with dynamic row heights
         product_chunks = []
         remaining_products = data_from_hash[:]
-        
+        row_heights = []
+
+        # Pre-calculate row heights for all products
+        for idx, r in enumerate(data_from_hash, start=1):
+            _, details_height = create_product_row(r, idx)
+            row_heights.append(max(base_row_height, details_height + 10))
+
+        current_idx = 0
         while remaining_products:
-            is_last_chunk = len(remaining_products) <= calculate_rows_per_page(True, include_summary=True)
-            rows_for_this_page = calculate_rows_per_page(is_last_chunk, include_summary=True)
+            is_last_chunk = len(remaining_products) <= calculate_rows_per_page(True, include_summary=True, row_heights=row_heights[current_idx:])
+            rows_for_this_page = calculate_rows_per_page(is_last_chunk, include_summary=True, row_heights=row_heights[current_idx:])
             
             chunk = remaining_products[:rows_for_this_page]
-            product_chunks.append(chunk)
+            chunk_heights = row_heights[current_idx:current_idx + rows_for_this_page]
+            product_chunks.append((chunk, chunk_heights))
             remaining_products = remaining_products[rows_for_this_page:]
+            current_idx += rows_for_this_page
 
         # Create tables for each chunk
-        for chunk_idx, chunk in enumerate(product_chunks):
+        for chunk_idx, (chunk, chunk_heights) in enumerate(product_chunks):
             is_last_chunk = (chunk_idx == len(product_chunks) - 1)
             
             chunk_table_data = [base_headers]
-            for idx, r in enumerate(chunk, start=sum(len(c) for c in product_chunks[:chunk_idx]) + 1):
-                row = create_product_row(r, idx)
+            chunk_row_heights = [header_height]
+            for idx, r in enumerate(chunk, start=sum(len(c[0]) for c in product_chunks[:chunk_idx]) + 1):
+                row, details_height = create_product_row(r, idx)
                 chunk_table_data.append(row)
+                chunk_row_heights.append(chunk_heights[len(chunk_table_data) - 2])
 
-            chunk_table = Table(chunk_table_data, colWidths=col_widths)
+            chunk_table = Table(chunk_table_data, colWidths=col_widths, rowHeights=chunk_row_heights)
             chunk_table.setStyle(TableStyle([
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 10),
@@ -2345,11 +2401,10 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             elems.append(outer_table)
             
             if is_last_chunk:
-                # Check if summary table fits on the same page
                 summary_rows = len(summary_data)
                 summary_height = summary_rows * summary_row_height
                 product_rows = len(chunk)
-                product_height = product_rows * row_height + header_height
+                product_height = sum(chunk_heights)
                 total_content_height = product_height + summary_height
                 
                 summary_on_new_page = total_content_height > available_height
@@ -2357,8 +2412,6 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 if summary_on_new_page:
                     elems.append(PageBreak())
                 
-                # Create summary table
-                discount_row_indices = [i for i, row in enumerate(summary_data) if "Discount" in row[0]]
                 summary_col_widths = [total_table_width - 150, 150]
                 summary_table = Table(summary_data, colWidths=summary_col_widths)
                 summary_table.setStyle(TableStyle([
@@ -2369,7 +2422,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                     ('FONTSIZE', (0, 0), (-1, -1), 12),
                     ('GRID', (0, 0), (-1, -1), 1.0, colors.black),
                     ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
-                    *[('TEXTCOLOR', (1, i), (1, i), colors.black) for i in discount_row_indices],
+                    *[('TEXTCOLOR', (1, i), (1, i), colors.black) for i in [i for i, row in enumerate(summary_data) if "Discount" in row[0]]],
                 ]))
                 
                 outer_summary_data = [[summary_table]]
@@ -2410,14 +2463,6 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
     st.session_state.pdf_data = st.session_state.get('pdf_data', [])
     return build_pdf(st.session_state.pdf_data, total, company_details, hdr_path, ftr_path, 
                     intro_path, closure_path, bg_path)
-
-
-
-
-
-
-
-
 
 # #################### technical offer###################
 @st.cache_data
@@ -3076,8 +3121,6 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
 
 
 
-
-
 def load_user_history_from_sheet(user_email, sheet):
     """Load user's quotation history from Google Sheet with fallbacks"""
     if sheet is None:
@@ -3126,7 +3169,7 @@ def load_user_history_from_sheet(user_email, sheet):
 
 # Before generating PDF
 
-if st.button("📅 Generate financial Quotation ") and output_data:
+if st.button("📅 Generate Financial Quotation") and output_data:
     with st.spinner("Generating PDF and saving to cloud history..."):
         st.session_state.pdf_data = output_data
         data_str = str(output_data) + str(final_total) + str(company_details)
@@ -3189,7 +3232,6 @@ if st.button("📅 Generate financial Quotation ") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
-
 
 if st.button("📅 Generate technical Quotation ") and output_data:
     with st.spinner("Generating PDF and saving to cloud history..."):
@@ -3254,6 +3296,8 @@ if st.button("📅 Generate technical Quotation ") and output_data:
                 mime="application/pdf",
                 key=f"download_pdf_{data_hash}"
             )
+
+
 def create_zoho_quote(company_details, items, final_total, shipping_fee=0, installation_fee=0):
     token = get_zoho_access_token()
     owner_id = company_details.get("quote_owner_id")
@@ -3420,17 +3464,5 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
-
-
-
-
-
-
-
-
-
-
-
-
 
 
