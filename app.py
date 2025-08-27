@@ -1361,6 +1361,7 @@ if st.session_state.role == "admin":
             if not st.session_state.get('form_submitted', False):
                 st.warning("⚠ Please fill in your company details to continue")
                 st.stop()
+            st.stop()
 
 # ========== Quotation Display Section ==========
 # ========== Quotation Display Section ==========
@@ -3181,6 +3182,7 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
+
 
 
 
