@@ -499,12 +499,12 @@ def get_gsheet_connection():
         # Open the spreadsheet by ID
         sh = gc.open_by_key(spreadsheet_id)
         
-        worksheet = sh.worksheet("Chairs")  # ← هنا التغيير المهم
+        worksheet = sh.worksheet("ALL")  # ← هنا التغيير المهم
 
         return worksheet  # هيرجع الورقة المطلوبة
 
     except gspread.WorksheetNotFound:
-        st.error("❌ Worksheet 'Chairs' not found. Check the sheet name (case-sensitive).")
+        st.error("❌ Worksheet 'ALL' not found. Check the sheet name (case-sensitive).")
         return None
     except gspread.SpreadsheetNotFound:
         st.error(f"❌ Spreadsheet with ID '{spreadsheet_id}' not found. Check sharing settings.")
@@ -3464,5 +3464,6 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
+
 
 
