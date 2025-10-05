@@ -96,7 +96,7 @@ def load_user_history_from_sheet(user_email, sheet):
                         "company_name": row["Company Name"],
                         "contact_person": row["Contact Person"],
                         "contact_email": "",  # Not stored in sheet
-                        "contact_phone": "",  # Not stored in sheet
+                        "contact_phone": row["Contact Phone"],
                         "address": "",  # Not stored in sheet
                         "warranty": "1 year",  # Default value
                         "down_payment": 50.0,  # Default value
@@ -130,6 +130,7 @@ def load_user_history_from_sheet(user_email, sheet):
                     "user_email": row["User Email"],
                     "timestamp": row["Timestamp"],
                     "company_name": row["Company Name"],
+                    "contact_phone": row["Contact Phone"],
                     "contact_person": row["Contact Person"],
                     "total": float(row["Total"]),
                     "items": items,
