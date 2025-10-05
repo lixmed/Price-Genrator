@@ -297,6 +297,7 @@ def load_user_history(user_email, sheet):
                     "user_email": row["User Email"],
                     "timestamp": row["Timestamp"],
                     "company_name": row["Company Name"],
+                    "contact_phone": row["Contact Phone"],
                     "contact_person": row["Contact Person"],
                     "total": float(row["Total"]),
                     "items": items,
@@ -702,6 +703,7 @@ if not st.session_state.logged_in:
                                     history.append({
                                         "timestamp": row["Timestamp"],
                                         "company_name": row["Company Name"],
+                                        "contact_phone": row["Contact Phone"],
                                         "contact_person": row["Contact Person"],
                                         "total": float(row["Total"]),
                                         "items": items,
@@ -3156,6 +3158,7 @@ def load_user_history_from_sheet(user_email, sheet):
                     "user_email": row["User Email"],
                     "timestamp": row["Timestamp"],
                     "company_name": row["Company Name"],
+                    "contact_phone": row["Contact Phone"],
                     "contact_person": row["Contact Person"],
                     "total": float(row["Total"]),
                     "items": items,
@@ -3471,6 +3474,7 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
+
 
 
 
