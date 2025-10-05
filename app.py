@@ -1180,15 +1180,20 @@ if st.session_state.role == "admin":
                         # st.write("DEBUG: Selected Account Data:", chosen_data)
                         
                         # Auto-fill session_state to populate form
-                        st.session_state.company_details = {
-                            "company_name": chosen_data.get("Account_Name", ""),
+                        # Preserve existing company_details if it exists
+                        if 'company_details' not in st.session_state:
+                            st.session_state.company_details = {}
+                        
+                        # Update only specific fields from Zoho
+                        st.session_state.company_details.update({
+                            "company_name": chosen_data.get("Account_Name", st.session_state.company_details.get("company_name", "")),
                             "contact_person": contact_person,
                             "contact_email": email,
-                            "contact_phone": chosen_data.get("Phone", ""),
-                            "address": chosen_data.get("Billing_Street", ""),
-                            "tax_id": chosen_data.get("Tax_ID", ""),
-                            "reg_no": chosen_data.get("Registration_No", "")
-                        }
+                            "contact_phone": chosen_data.get("Phone", st.session_state.company_details.get("contact_phone", "")),
+                            "address": chosen_data.get("Billing_Street", st.session_state.company_details.get("address", "")),
+                            "tax_id": chosen_data.get("Tax_ID", st.session_state.company_details.get("tax_id", "626180228")),  # Preserve default/existing
+                            "reg_no": chosen_data.get("Registration_No", st.session_state.company_details.get("reg_no", "15971"))  # Preserve default/existing
+                        })
                         st.success(f"✅ Company details loaded for '{selected_acc}'!")
                         st.rerun()
                 else:
@@ -1241,8 +1246,8 @@ if st.session_state.role == "admin":
                                             value=existing_data.get("account_number", "100049865966"))
                 company = st.text_input("Company", 
                                         value=existing_data.get("company", "FlakeTech for Trading Company"))
-                tax_id = st.text_input("Tax ID", value=existing_data.get("tax_id", "626180228"))
-                reg_no = st.text_input("Commercial/Chamber Reg. No", value=existing_data.get("reg_no", "15971"))
+                tax_id = st.text_input("Tax ID", value=existing_data.get("tax_id") or "626180228")
+                reg_no = st.text_input("Commercial/Chamber Reg. No", value=existing_data.get("reg_no") or "15971")
                 
                 # Phone validation pattern
                 phone_pattern = r'^\+?\d+$'
@@ -3466,6 +3471,7 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
+
 
 
 
