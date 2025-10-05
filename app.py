@@ -3209,7 +3209,8 @@ if st.button("📅 Generate Financial Quotation") and output_data:
                     new_record["total"],
                     json.dumps(new_record["items"]),
                     new_record["pdf_filename"],
-                    new_record["quotation_hash"]
+                    new_record["quotation_hash"],
+                    json.dumps(company_details)
                 ]
                 history_sheet.append_row(row)
                 st.success("✅ Quotation saved to session and Google Sheet!")
@@ -3273,7 +3274,8 @@ if st.button("📅 Generate technical Quotation ") and output_data:
                     new_record["total"],
                     json.dumps(new_record["items"]),
                     new_record["pdf_filename"],
-                    new_record["quotation_hash"]
+                    new_record["quotation_hash"],
+                    json.dumps(company_details)
                 ]
                 history_sheet.append_row(row)
                 st.success("✅ Quotation saved to session and Google Sheet!")
@@ -3464,6 +3466,7 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
+
 
 
 
