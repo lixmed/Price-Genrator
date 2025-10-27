@@ -2176,8 +2176,8 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         elems.append(PageBreak())
 
         # === Table Setup ===
-        desc_style = ParagraphStyle(name='Description', fontSize=9, leading=11, alignment=TA_CENTER)
-        styleN = ParagraphStyle(name='Normal', fontSize=9, leading=10, alignment=TA_CENTER)
+        desc_style = ParagraphStyle(name='Description', fontSize=10, leading=11, alignment=TA_CENTER)
+        styleN = ParagraphStyle(name='Normal', fontSize=10, leading=10, alignment=TA_CENTER)
 
         def is_empty(val):
             return pd.isna(val) or val is None or str(val).lower() == 'nan' or str(val).strip() == ''
@@ -2299,7 +2299,8 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         top_margin = 100
         bottom_margin = 250
         header_height = 25
-        base_row_height = 150
+        row_heights=150
+        row_heights = []
         summary_row_height = 25
         spacer_height = 30
         
@@ -2354,8 +2355,8 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         # Pre-calculate row heights for all products
         for idx, r in enumerate(data_from_hash, start=1):
             _, details_height = create_product_row(r, idx)
-            row_heights.append(max(base_row_height, details_height + 10))
-
+            dynamic_height = details_height + 30  # generous padding
+            row_heights.append(max(100, dynamic_height))  # enforce minimum
         current_idx = 0
         while remaining_products:
             is_last_chunk = len(remaining_products) <= calculate_rows_per_page(True, include_summary=True, row_heights=row_heights[current_idx:])
@@ -2371,14 +2372,23 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         for chunk_idx, (chunk, chunk_heights) in enumerate(product_chunks):
             is_last_chunk = (chunk_idx == len(product_chunks) - 1)
             
+            # Inside the loop where you build `chunk_table_data`
             chunk_table_data = [base_headers]
-            chunk_row_heights = [header_height]
-            for idx, r in enumerate(chunk, start=sum(len(c[0]) for c in product_chunks[:chunk_idx]) + 1):
+            chunk_row_heights = [header_height]  # First row = header
+
+            for idx, r in enumerate(chunk, start=1):
                 row, details_height = create_product_row(r, idx)
                 chunk_table_data.append(row)
-                chunk_row_heights.append(chunk_heights[len(chunk_table_data) - 2])
+                # Use max to ensure minimum readability
+                actual_row_height = max(details_height + 20, 120)  # +20 for padding, min 120
+                chunk_row_heights.append(actual_row_height)
 
-            chunk_table = Table(chunk_table_data, colWidths=col_widths, rowHeights=chunk_row_heights)
+            # Build table with dynamic row heights
+            chunk_table = Table(
+                chunk_table_data,
+                colWidths=col_widths,
+                rowHeights=chunk_row_heights  # ← Critical: apply dynamic heights
+            )
             chunk_table.setStyle(TableStyle([
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 10),
@@ -3474,9 +3484,3 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
-
-
-
-
-
-
