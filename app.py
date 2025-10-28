@@ -1754,9 +1754,24 @@ if ((st.session_state.role == "buyer") or
             # Update session state with new price
             st.session_state.price_edits[prod] = edited_price
             # Quantity
-            qty = c7.number_input("", min_value=1, value=1, step=1, key=f"qty_{idx}", label_visibility="collapsed")
+            qty = c7.number_input(
+                "", 
+                min_value=1, 
+                value=st.session_state.get(f"qty_{idx}", 1),  # ✅ Read from session state
+                step=1, 
+                key=f"qty_{idx}", 
+                label_visibility="collapsed"
+            )
             # Discount (editable)
-            discount = c8.number_input("", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"disc_{idx}", label_visibility="collapsed")
+            discount = c8.number_input(
+                "", 
+                min_value=0.0, 
+                max_value=100.0, 
+                value=st.session_state.get(f"disc_{idx}", 0.0),  # ✅ Read from session state
+                step=1.0, 
+                key=f"disc_{idx}", 
+                label_visibility="collapsed"
+            )
             valid_discount = 0.0 if discount > 20 else discount
             if discount > 20:
                 st.warning(f"⚠ Max 20% discount allowed for '{prod}'. Ignoring discount.")
