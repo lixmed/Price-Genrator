@@ -779,7 +779,7 @@ else:
             # Edit Button
             with col3:
                 if st.button("✏️ Edit Quotation", key=f"edit_{idx}_{quote['hash']}"):
-                    # Restore into session state
+                    # Restore company details
                     st.session_state.form_submitted = True
                     st.session_state.company_details = quote.get("company_details") or {
                         "company_name": quote["company_name"],
@@ -802,21 +802,39 @@ else:
                         "account_number": "100049865966",
                         "company": "FlakeTech for Trading Company",
                         "tax_id": "626180228",
-                        "reg_no": "15971"
+                        "reg_no": "15971",
+                        "vat_rate": 0.14,
+                        "shipping_fee": 0.0,
+                        "installation_fee": 0.0
                     }
 
                     # Reset product rows
                     st.session_state.row_indices = list(range(len(quote["items"])))
                     st.session_state.selected_products = {}
+                    
+                    # 👇 CRITICAL: Initialize ALL input-related session state keys
+                    if 'price_edits' not in st.session_state:
+                        st.session_state.price_edits = {}
+                    if 'discount_edits' not in st.session_state:
+                        st.session_state.discount_edits = {}
+                    if 'description_edits' not in st.session_state:
+                        st.session_state.description_edits = {}
 
-                    # Restore each product and inputs
+                    # Restore each product and its associated inputs
                     for i, item in enumerate(quote["items"]):
                         prod_key = f"prod_{i}"
                         qty_key = f"qty_{i}"
                         disc_key = f"disc_{i}"
-                        st.session_state.selected_products[prod_key] = item["Item"]
-                        st.session_state[qty_key] = item["Quantity"]
-                        st.session_state[disc_key] = item["Discount %"]
+                        desc_key = f"desc_{i}"  # even though desc uses text_area
+
+                        product_name = item["Item"]
+                        st.session_state.selected_products[prod_key] = product_name
+
+                        # Initialize quantity, discount, description, and price in session state
+                        st.session_state[qty_key] = item.get("Quantity", 1)
+                        st.session_state[disc_key] = item.get("Discount %", 0.0)
+                        st.session_state.description_edits[product_name] = item.get("Description", "")
+                        st.session_state.price_edits[product_name] = item.get("Price per item", 0.0)
 
                     st.success("🔄 Loading quotation into editor...")
                     time.sleep(1)
