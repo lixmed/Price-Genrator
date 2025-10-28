@@ -776,66 +776,82 @@ else:
                         st.warning("⚠️ Press 'Delete' again to confirm.")
                         st.rerun()
             
-            # Edit Button
+           # Edit Button
             with col3:
-                if st.button("✏️ Edit Quotation", key=f"edit_{idx}_{quote['hash']}"):
-                    # Restore company details
+                if st.button("Edit Quotation", key=f"edit_{idx}_{quote['hash']}"):
+                    # === 1. Restore Company Details Safely ===
                     st.session_state.form_submitted = True
-                    st.session_state.company_details = quote.get("company_details") or {
-                        "company_name": quote["company_name"],
-                        "contact_person": quote.get("contact_person", ""),
-                        "contact_email": "",
-                        "contact_phone": "",
-                        "address": "",
+
+                    # Try to get existing company_details, otherwise build from quote + defaults
+                    company_details = quote.get("company_details") or {}
+
+                    st.session_state.company_details = {
+                        # Core fields
+                        "company_name": quote.get("company_name", ""),
+                        "contact_person": company_details.get("contact_person") or quote.get("contact_person", ""),
+                        "contact_email": company_details.get("contact_email", ""),
+                        "contact_phone": (
+                            company_details.get("contact_phone") or
+                            quote.get("contact_phone", "")
+                        ),
+                        "address": company_details.get("address", ""),
+
+                        # Prepared by (current user)
                         "prepared_by": st.session_state.username,
                         "prepared_by_email": st.session_state.user_email,
+
+                        # Dates
                         "current_date": datetime.now().strftime("%A, %B %d, %Y"),
                         "valid_till": (datetime.now() + timedelta(days=10)).strftime("%A, %B %d, %Y"),
-                        "quotation_validity": "30 days",
-                        "warranty": "1 year",
-                        "down_payment": 50.0,
-                        "delivery": "Expected in 3–4 weeks",
-                        "vat_note": "Prices exclude 14% VAT",
-                        "shipping_note": "Shipping & Installation fees to be added",
-                        "bank": "CIB",
-                        "iban": "EG340010015100000100049865966",
-                        "account_number": "100049865966",
-                        "company": "FlakeTech for Trading Company",
-                        "tax_id": "626180228",
-                        "reg_no": "15971",
-                        "vat_rate": 0.14,
-                        "shipping_fee": 0.0,
-                        "installation_fee": 0.0
+
+                        # Terms
+                        "quotation_validity": company_details.get("quotation_validity", "30 days"),
+                        "warranty": company_details.get("warranty", "1 year"),
+                        "down_payment": company_details.get("down_payment", 50.0),
+                        "delivery": company_details.get("delivery", "Expected in 3–4 weeks"),
+                        "vat_note": company_details.get("vat_note", "Prices exclude 14% VAT"),
+                        "shipping_note": company_details.get("shipping_note", "Shipping & Installation fees to be added"),
+
+                        # Bank & Company Info
+                        "bank": company_details.get("bank", "CIB"),
+                        "iban": company_details.get("iban", "EG340010015100000100049865966"),
+                        "account_number": company_details.get("account_number", "100049865966"),
+                        "company": company_details.get("company", "FlakeTech for Trading Company"),
+                        "tax_id": company_details.get("tax_id", "626180228"),
+                        "reg_no": company_details.get("reg_no", "15971"),
+
+                        # Rates & Fees
+                        "vat_rate": company_details.get("vat_rate", 0.14),
+                        "shipping_fee": company_details.get("shipping_fee", 0.0),
+                        "installation_fee": company_details.get("installation_fee", 0.0),
                     }
 
-                    # Reset product rows
-                    st.session_state.row_indices = list(range(len(quote["items"])))
+                    # === 2. Reset Product Rows ===
+                    st.session_state.row_indices = list(range(len(quote.get("items", []))))
                     st.session_state.selected_products = {}
-                    
-                    # 👇 CRITICAL: Initialize ALL input-related session state keys
-                    if 'price_edits' not in st.session_state:
-                        st.session_state.price_edits = {}
-                    if 'discount_edits' not in st.session_state:
-                        st.session_state.discount_edits = {}
-                    if 'description_edits' not in st.session_state:
-                        st.session_state.description_edits = {}
 
-                    # Restore each product and its associated inputs
-                    for i, item in enumerate(quote["items"]):
+                    # === 3. Initialize Edit Dictionaries (if not exist) ===
+                    for edit_dict in ["price_edits", "discount_edits", "description_edits"]:
+                        if edit_dict not in st.session_state:
+                            st.session_state[edit_dict] = {}
+
+                    # === 4. Restore Each Product Item ===
+                    for i, item in enumerate(quote.get("items", [])):
                         prod_key = f"prod_{i}"
                         qty_key = f"qty_{i}"
                         disc_key = f"disc_{i}"
-                        desc_key = f"desc_{i}"  # even though desc uses text_area
+                        product_name = item.get("Item", "")
 
-                        product_name = item["Item"]
+                        # Store selected product
                         st.session_state.selected_products[prod_key] = product_name
 
-                        # Initialize quantity, discount, description, and price in session state
+                        # Restore values
                         st.session_state[qty_key] = item.get("Quantity", 1)
                         st.session_state[disc_key] = item.get("Discount %", 0.0)
                         st.session_state.description_edits[product_name] = item.get("Description", "")
                         st.session_state.price_edits[product_name] = item.get("Price per item", 0.0)
 
-                    st.success("🔄 Loading quotation into editor...")
+                    # === 5. Feedback & Redirect ===
+                    st.success("Loading quotation into editor...")
                     time.sleep(1)
                     st.switch_page("app.py")
