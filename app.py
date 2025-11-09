@@ -1,5 +1,4 @@
 import streamlit as st
-from reportlab.platypus import LongTable
 import pandas as pd
 import re, math, hashlib, requests, time
 from io import BytesIO
@@ -2064,38 +2063,29 @@ def download_image_for_pdf(url, max_size=(300, 300)):
         return None
 
 @st.cache_data
-def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png",
-                     intro_path="FT-Quotation-Temp-financial.jpg", closure_path="FT-Quotation-Temp-2.jpg",
-                     bg_path="FT Quotation Temp[1](1).jpg"):
+def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png", 
+                    intro_path="FT-Quotation-Temp-financial.jpg", closure_path="FT-Quotation-Temp-2.jpg",
+                    bg_path="FT Quotation Temp[1](1).jpg"):
     
     def build_pdf(data, total, company_details, hdr_path, ftr_path, intro_path, closure_path, bg_path):
-        import tempfile
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, LongTable, TableStyle, KeepInFrame
-        from reportlab.lib import colors
-        from reportlab.lib.pagesizes import A3
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.units import inch
-        from reportlab.platypus import Image as RLImage
-        import os
-        import pandas as pd
-
         # Create temp file
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
         pdf_path = tmp.name
         tmp.close()
+
         doc = SimpleDocTemplate(
             pdf_path,
             pagesize=A3,
             topMargin=100,
             leftMargin=40,
             rightMargin=70,
-            bottomMargin=110,
-            showBoundary=1  # Debug frame boundaries
+            bottomMargin=250
         )
         styles = getSampleStyleSheet()
         elems = []
         styles['Normal'].fontSize = 14
         styles['Normal'].leading = 20
+
         aligned_style = ParagraphStyle(
             name='LeftAligned',
             parent=styles['Normal'],
@@ -2105,34 +2095,44 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             leftIndent=50
         )
 
-        # Header and footer
+        # Variables to track page structure
         cover_page = 1
         content_start_page = 2
         closure_page_num = None
+
         def header_footer(canvas, doc):
             canvas.saveState()
             page_num = canvas.getPageNumber()
+            
+            # Draw full-page cover image on first page
             if page_num == cover_page and intro_path and os.path.exists(intro_path):
                 canvas.drawImage(intro_path, 0, 0, width=A3[0], height=A3[1])
                 canvas.restoreState()
                 return
+            
+            # Draw full-page closure image on last page
             if closure_page_num is not None and page_num == closure_page_num and closure_path and os.path.exists(closure_path):
                 canvas.drawImage(closure_path, 0, 0, width=A3[0], height=A3[1])
                 canvas.restoreState()
                 return
+            
+            # Draw background image on content pages
             if bg_path and os.path.exists(bg_path) and page_num >= content_start_page and (closure_page_num is None or page_num < closure_page_num):
                 canvas.drawImage(bg_path, 0, 0, width=A3[0], height=A3[1], preserveAspectRatio=True, mask='auto')
+            
+            # Add page numbering for content pages only
             if page_num >= content_start_page and (closure_page_num is None or page_num < closure_page_num):
                 canvas.setFont('Helvetica', 10)
                 content_page_num = page_num - content_start_page + 1
                 canvas.drawRightString(doc.width + doc.leftMargin, 40, f"Page {content_page_num}")
+            
             canvas.restoreState()
 
-        # Cover page
+        # === Cover Page ===
         if intro_path and os.path.exists(intro_path):
             elems.append(PageBreak())
 
-        # Company details
+        # === Company Details ===
         detail_lines = [
             "<para align='left'><font size=14>",
             f"<b>Date:</b> <font color='black'>{company_details['current_date']}</font><br/>",
@@ -2150,10 +2150,11 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             detail_lines.append(f"<b>Contact Email:</b> <font color='black'>{company_details['contact_email']}</font><br/>")
         detail_lines.append("</font></para>")
         details = "".join(detail_lines)
+        
         elems.append(Spacer(1, 20))
         elems.append(Paragraph(details, aligned_style))
 
-        # Terms and conditions
+        # === Terms & Conditions ===
         terms_conditions = f"""
         <para align="left">
         <font size=14>
@@ -2169,7 +2170,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         elems.append(Spacer(1, 15))
         elems.append(Paragraph(terms_conditions, aligned_style))
 
-        # Payment info
+        # === Payment Info ===
         payment_info = f"""
         <para align="left">
         <font size=14>
@@ -2185,70 +2186,89 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         """
         elems.append(Spacer(1, 15))
         elems.append(Paragraph(payment_info, aligned_style))
+        
+        # Always start table on new page to avoid layout issues
         elems.append(PageBreak())
 
-        # Table setup
-        desc_style = ParagraphStyle(name='Description', fontSize=9, leading=11, alignment=1)
-        styleN = ParagraphStyle(name='Normal', fontSize=9, leading=10, alignment=1)
+        # === Table Setup ===
+        desc_style = ParagraphStyle(name='Description', fontSize=10, leading=11, alignment=TA_CENTER)
+        styleN = ParagraphStyle(name='Normal', fontSize=10, leading=10, alignment=TA_CENTER)
+
         def is_empty(val):
             return pd.isna(val) or val is None or str(val).lower() == 'nan' or str(val).strip() == ''
+
         def safe_str(val):
             return "" if is_empty(val) else str(val)
+
         def safe_float(val):
             return "" if is_empty(val) else f"{float(val):.2f}"
 
         data_from_hash = data
         has_discounts = any(float(item.get('Discount %', 0)) > 0 for item in data_from_hash)
-        subtotal_before = sum(float(r.get('Price per item', 0)) * float(r.get('Quantity', 1)) for r in data_from_hash)
-        subtotal_after = sum(float(r.get('Price per item', 0)) * (1 - float(r.get('Discount %', 0)) / 100) * float(r.get('Quantity', 1)) for r in data_from_hash)
+
+        # Calculate subtotals
+        subtotal_before = 0.0
+        subtotal_after = 0.0
+        for r in data_from_hash:
+            unit_price = float(r.get('Price per item', 0))
+            qty = float(r.get('Quantity', 1))
+            disc_pct = float(r.get('Discount %', 0))
+            discounted_price = unit_price * (1 - disc_pct / 100)
+            subtotal_before += unit_price * qty
+            subtotal_after += discounted_price * qty
+
         discount_amount = subtotal_before - subtotal_after
         overall_disc_amount = max(subtotal_after - total, 0.0) if abs(subtotal_after - total) > 0.01 else 0.0
         total_after_discount = total if overall_disc_amount > 0 else subtotal_after
 
-        # Headers and column widths
+        # === Headers ===
         base_headers = ["Ser.", "Item", "Image", "SKU", "Specs", "QTY", "B.D.", "Net Price", "Total"]
         if has_discounts:
             base_headers.insert(8, "Disc %")
+
+        # === Column Widths (optimized for A3) ===
         col_widths = [30, 75, 145, 55, 130, 45, 55, 65, 65]
         if has_discounts:
             col_widths.insert(8, 55)
         else:
             col_widths[4] += 55
+
         total_table_width = sum(col_widths)
         temp_files = []
 
-        # Estimate paragraph height
+        # === Estimate Paragraph Height ===
         def estimate_paragraph_height(text, style, width):
             para = Paragraph(text, style)
             used_width, used_height = para.wrap(width, 1000)
             return used_height
 
-        # Build product row
+        # === Build Product Table Data with Optimized Images ===
         def create_product_row(r, idx):
             img_element = Paragraph("No Image", styleN)
             if r.get("Image"):
                 download_url = convert_google_drive_url_for_storage(r["Image"])
-                temp_img_path = download_image_for_pdf(download_url, max_size=(100, 100))  # Reduced size
+                temp_img_path = download_image_for_pdf(download_url, max_size=(300, 300))
                 if temp_img_path and os.path.exists(temp_img_path):
                     try:
                         img = RLImage(temp_img_path)
-                        img.drawWidth = 100
-                        img.drawHeight = 100
+                        img.drawWidth = 300
+                        img.drawHeight = 300
                         img.hAlign = 'CENTER'
                         img.vAlign = 'MIDDLE'
                         img.preserveAspectRatio = True
-                        img_element = KeepInFrame(100, 100, [img], mode='shrink')
+                        img_component = KeepInFrame(200, 150, [img], mode='shrink')
+                        img_element = img_component
                         temp_files.append(temp_img_path)
                     except Exception as e:
-                        print(f"Error creating image element: {e}")
+                        print(f"Error creating image element for {r.get('Item', 'Unknown')}: {e}")
                         img_element = Paragraph("Image Error", styleN)
 
-            desc_text = safe_str(r.get('Description', ''))
-            if len(desc_text) > 150:
-                desc_text = desc_text[:150] + "..."
+            # Build description with conditional Dimensions
+            desc_text = safe_str(r.get('Description'))
             color_text = safe_str(r.get('Color'))
             warranty_text = safe_str(r.get('Warranty'))
             dimensions_text = safe_str(r.get('Dimensions'))
+            
             details_parts = [
                 f"<b>Description:</b> {desc_text}",
                 f"<b>Color:</b> {color_text}",
@@ -2256,16 +2276,21 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             ]
             if dimensions_text:
                 details_parts.append(f"<b>Dimensions:</b> {dimensions_text}")
+                
             details_text = "<br/>".join(details_parts)
             details_para = Paragraph(details_text, desc_style)
+
+            # Estimate the height needed for the description cell
             details_height = estimate_paragraph_height(details_text, desc_style, col_widths[4])
 
             unit_price = float(r.get('Price per item', 0))
             disc_pct = float(r.get('Discount %', 0))
             net_price = unit_price * (1 - disc_pct / 100)
+
             item_name = safe_str(r.get('Item'))
             if len(item_name) > 35:
                 item_name = item_name[:35] + "..."
+
             row = [
                 str(idx),
                 Paragraph(item_name, styleN),
@@ -2276,39 +2301,47 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 Paragraph(f"{unit_price:.2f}", styleN),
                 Paragraph(f"{net_price:.2f}", styleN),
             ]
-            if has_discounts:
-                row.insert(8, Paragraph(f"{safe_float(r.get('Discount %'))}%", styleN))
-            row.append(Paragraph(safe_float(r.get('Total price')), styleN))
-            return row, max(100, details_height + 10)  # Minimum row height of 100
 
-        # Calculate rows per page
-        page_height = A3[1]  # ~1190 points
+            if has_discounts:
+                discount_val = safe_float(r.get('Discount %'))
+                row.insert(8, Paragraph(f"{discount_val}%", styleN))
+
+            row.append(Paragraph(safe_float(r.get('Total price')), styleN))
+            return row, details_height
+
+        # === Calculate maximum rows per page based on available space ===
+        page_height = A3[1]
         top_margin = 100
         bottom_margin = 250
         header_height = 25
+        row_heights=150
+        row_heights = []
+        summary_row_height = 25
         spacer_height = 30
+        
         available_height = page_height - top_margin - bottom_margin - header_height - spacer_height
-
+        
         def calculate_rows_per_page(is_last_chunk=False, include_summary=False, row_heights=[]):
             height_for_table = available_height
             if is_last_chunk and include_summary:
                 summary_rows = len(summary_data)
-                summary_height = summary_rows * 25
+                summary_height = summary_rows * summary_row_height
                 height_for_table -= summary_height
             if row_heights:
                 total_row_height = sum(row_heights)
-                max_rows = max(1, int(height_for_table / max(row_heights)))
+                max_rows = max(1, int(height_for_table // max(row_heights)))
                 if total_row_height > height_for_table:
                     max_rows = min(max_rows, len(row_heights))
                 return min(max_rows, 8)
-            return min(int(height_for_table / 100), 8)  # Assume 100 points per row
+            return min(int(height_for_table // base_row_height), 8)
 
-        # Summary table
+        # === Build Summary Table Data ===
         vat_rate = company_details.get("vat_rate", 0.14)
         shipping_fee = float(company_details.get("shipping_fee", 0.0))
         installation_fee = float(company_details.get("installation_fee", 0.0))
         vat = (shipping_fee + total_after_discount) * vat_rate
         grand_total = total_after_discount + shipping_fee + installation_fee + vat
+
         summary_data = []
         has_any_discount = (discount_amount > 0 or overall_disc_amount > 0)
         if has_any_discount:
@@ -2320,24 +2353,30 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             summary_data.append(["Total After Discounts", f"{total_after_discount:.2f} EGP"])
         else:
             summary_data.append(["Total", f"{total_after_discount:.2f} EGP"])
+
         if shipping_fee > 0:
             summary_data.append(["Shipping Fee", f"{shipping_fee:.2f} EGP"])
         if installation_fee > 0:
             summary_data.append(["Installation Fee", f"{installation_fee:.2f} EGP"])
+
         summary_data.append([f"VAT ({int(vat_rate * 100)}%)", f"{vat:.2f} EGP"])
         summary_data.append(["Grand Total", f"{grand_total:.2f} EGP"])
 
-        # Split products into chunks
+        # Split products into chunks with dynamic row heights
         product_chunks = []
         remaining_products = data_from_hash[:]
         row_heights = []
+
+        # Pre-calculate row heights for all products
         for idx, r in enumerate(data_from_hash, start=1):
             _, details_height = create_product_row(r, idx)
-            row_heights.append(details_height)
+            dynamic_height = details_height + 30  # generous padding
+            row_heights.append(max(100, dynamic_height))  # enforce minimum
         current_idx = 0
         while remaining_products:
             is_last_chunk = len(remaining_products) <= calculate_rows_per_page(True, include_summary=True, row_heights=row_heights[current_idx:])
             rows_for_this_page = calculate_rows_per_page(is_last_chunk, include_summary=True, row_heights=row_heights[current_idx:])
+            
             chunk = remaining_products[:rows_for_this_page]
             chunk_heights = row_heights[current_idx:current_idx + rows_for_this_page]
             product_chunks.append((chunk, chunk_heights))
@@ -2347,13 +2386,24 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         # Create tables for each chunk
         for chunk_idx, (chunk, chunk_heights) in enumerate(product_chunks):
             is_last_chunk = (chunk_idx == len(product_chunks) - 1)
+            
+            # Inside the loop where you build `chunk_table_data`
             chunk_table_data = [base_headers]
-            for idx, r in enumerate(chunk, start=sum(len(c[0]) for c in product_chunks[:chunk_idx]) + 1):
-                row, _ = create_product_row(r, idx)
-                chunk_table_data.append(row)
+            chunk_row_heights = [header_height]  # First row = header
 
-            # Use LongTable instead of Table
-            chunk_table = LongTable(chunk_table_data, colWidths=col_widths, rowHeights=None, repeatRows=1)
+            for idx, r in enumerate(chunk, start=1):
+                row, details_height = create_product_row(r, idx)
+                chunk_table_data.append(row)
+                # Use max to ensure minimum readability
+                actual_row_height = max(details_height + 20, 120)  # +20 for padding, min 120
+                chunk_row_heights.append(actual_row_height)
+
+            # Build table with dynamic row heights
+            chunk_table = Table(
+                chunk_table_data,
+                colWidths=col_widths,
+                rowHeights=chunk_row_heights  # ← Critical: apply dynamic heights
+            )
             chunk_table.setStyle(TableStyle([
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 10),
@@ -2369,7 +2419,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 ('TOPPADDING', (0, 0), (-1, -1), 5),
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
             ]))
-
+            
             outer_data = [[chunk_table]]
             bottom_padding = 0 if is_last_chunk else 10
             outer_style = TableStyle([
@@ -2379,18 +2429,23 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 ('BOTTOMPADDING', (0, 0), (0, 0), bottom_padding),
                 ('GRID', (0, 0), (0, 0), 0, colors.transparent),
             ])
-            elems.append(Spacer(1, 20))
-
+            outer_table = Table(outer_data, colWidths=[total_table_width], style=outer_style)
+            elems.append(outer_table)
+            
             if is_last_chunk:
                 summary_rows = len(summary_data)
-                summary_height = summary_rows * 25
+                summary_height = summary_rows * summary_row_height
+                product_rows = len(chunk)
                 product_height = sum(chunk_heights)
                 total_content_height = product_height + summary_height
-                if total_content_height > available_height:
+                
+                summary_on_new_page = total_content_height > available_height
+                
+                if summary_on_new_page:
                     elems.append(PageBreak())
-
+                
                 summary_col_widths = [total_table_width - 150, 150]
-                summary_table = LongTable(summary_data, colWidths=summary_col_widths, rowHeights=None)
+                summary_table = Table(summary_data, colWidths=summary_col_widths)
                 summary_table.setStyle(TableStyle([
                     ('ALIGN', (0, 0), (0, -1), 'LEFT'),
                     ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
@@ -2401,14 +2456,21 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                     ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
                     *[('TEXTCOLOR', (1, i), (1, i), colors.black) for i in [i for i, row in enumerate(summary_data) if "Discount" in row[0]]],
                 ]))
+                
                 outer_summary_data = [[summary_table]]
-                outer_summary = LongTable(outer_summary_data, colWidths=[total_table_width], rowHeights=None)
-                outer_summary.setStyle(outer_style)
+                outer_summary_style = TableStyle([
+                    ('LEFTPADDING', (0, 0), (0, 0), 50),
+                    ('RIGHTPADDING', (0, 0), (0, 0), 0),
+                    ('TOPPADDING', (0, 0), (0, 0), 0),
+                    ('BOTTOMPADDING', (0, 0), (0, 0), 0),
+                    ('GRID', (0, 0), (0, 0), 0, colors.transparent),
+                ])
+                outer_summary = Table(outer_summary_data, colWidths=[total_table_width], style=outer_summary_style)
                 elems.append(outer_summary)
             else:
                 elems.append(PageBreak())
 
-        # Closure page
+        # === Closure Page ===
         if closure_path and os.path.exists(closure_path):
             elems.append(PageBreak())
             elems.append(Spacer(1, 1))
@@ -2419,7 +2481,6 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             doc.build(elems, onFirstPage=header_footer, onLaterPages=header_footer)
         except Exception as e:
             print(f"PDF build failed: {e}")
-            st.error(f"PDF generation failed: {e}")
             raise
         finally:
             for temp_file in temp_files:
@@ -2428,24 +2489,25 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                         os.unlink(temp_file)
                 except Exception as e:
                     print(f"Failed to delete temp file: {e}")
+
         return pdf_path
 
     st.session_state.pdf_data = st.session_state.get('pdf_data', [])
-    return build_pdf(st.session_state.pdf_data, total, company_details, hdr_path, ftr_path,
-                     intro_path, closure_path, bg_path)
+    return build_pdf(st.session_state.pdf_data, total, company_details, hdr_path, ftr_path, 
+                    intro_path, closure_path, bg_path)
+
 # #################### technical offer###################
 @st.cache_data
-def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png",
+def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png", 
                          intro_path="FT-Quotation-Temp-1.jpg", closure_path="FT-Quotation-Temp-2.jpg",
                          bg_path="FT Quotation Temp[1](1).jpg"):
     
     def build_pdf(data, total, company_details, hdr_path, ftr_path, intro_path, closure_path, bg_path):
         import tempfile
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, LongTable, TableStyle, Flowable
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Table, TableStyle, Flowable
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import A3
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.units import inch
         from reportlab.platypus import Image as RLImage
         import os
         import pandas as pd
@@ -2455,19 +2517,20 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
         pdf_path = tmp.name
         tmp.close()
+
         doc = SimpleDocTemplate(
             pdf_path,
             pagesize=A3,
             topMargin=100,
             leftMargin=40,
             rightMargin=70,
-            bottomMargin=250,
-            showBoundary=1
+            bottomMargin=250
         )
         styles = getSampleStyleSheet()
         elems = []
         styles['Normal'].fontSize = 14
         styles['Normal'].leading = 20
+
         aligned_style = ParagraphStyle(
             name='LeftAligned',
             parent=styles['Normal'],
@@ -2477,62 +2540,81 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
             leftIndent=50
         )
 
-        # Header and footer
+        # Variables to track page structure
         cover_page = 1
         content_start_page = 2
         closure_page_num = None
+
         def header_footer(canvas, doc):
             canvas.saveState()
             page_num = canvas.getPageNumber()
+            
+            # Draw full-page cover image on first page
             if page_num == cover_page and intro_path and os.path.exists(intro_path):
                 canvas.drawImage(intro_path, 0, 0, width=A3[0], height=A3[1])
                 canvas.restoreState()
                 return
+            
+            # Draw full-page closure image on last page
             if closure_page_num is not None and page_num == closure_page_num and closure_path and os.path.exists(closure_path):
                 canvas.drawImage(closure_path, 0, 0, width=A3[0], height=A3[1])
                 canvas.restoreState()
                 return
+            
+            # Draw background image on content pages
             if bg_path and os.path.exists(bg_path) and page_num >= content_start_page and (closure_page_num is None or page_num < closure_page_num):
                 canvas.drawImage(bg_path, 0, 0, width=A3[0], height=A3[1], preserveAspectRatio=True, mask='auto')
+            
+            # Add page numbering for content pages only
             if page_num >= content_start_page and (closure_page_num is None or page_num < closure_page_num):
                 canvas.setFont('Helvetica', 10)
                 content_page_num = page_num - content_start_page + 1
                 canvas.drawRightString(doc.width + doc.leftMargin, 40, f"Page {content_page_num}")
+            
             canvas.restoreState()
 
-        # Cover page
+        # === Cover Page ===
         if intro_path and os.path.exists(intro_path):
             elems.append(PageBreak())
 
         def is_empty(val):
             return pd.isna(val) or val is None or str(val).lower() == 'nan'
+
         def safe_str(val):
             return "" if is_empty(val) else str(val)
+
         def safe_float(val):
             return "" if is_empty(val) else f"{float(val):.2f}"
 
         def convert_google_drive_url_for_storage(url):
+            """Convert Google Drive sharing URL to direct download URL"""
             if not url:
                 return url
+            
+            # Extract file ID from various Google Drive URL formats
             if '/file/d/' in url:
                 file_id = url.split('/file/d/')[1].split('/')[0]
                 return f"https://drive.google.com/uc?export=download&id={file_id}"
             elif 'id=' in url:
                 file_id = url.split('id=')[1].split('&')[0]
                 return f"https://drive.google.com/uc?export=download&id={file_id}"
-            return url
+            else:
+                return url
 
-        def download_image_for_pdf(url, max_size=(150, 150)):
+        def download_image_for_pdf(url, max_size=(300, 300)):
+            """Download and resize image for PDF inclusion"""
             try:
                 import requests
                 from PIL import Image as PILImage
                 from io import BytesIO
                 import tempfile
+                
                 response = requests.get(url, timeout=5)
                 response.raise_for_status()
                 img = PILImage.open(BytesIO(response.content)).convert("RGB")
                 img_ratio = img.width / img.height
                 max_width, max_height = max_size
+                
                 if img.width > max_width or img.height > max_height:
                     if img_ratio > 1:
                         new_width = max_width
@@ -2541,6 +2623,7 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
                         new_height = max_height
                         new_width = int(max_height * img_ratio)
                     img = img.resize((new_width, new_height), PILImage.Resampling.LANCZOS)
+                
                 temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
                 img.save(temp_file, format="PNG")
                 temp_file.close()
@@ -2550,58 +2633,169 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
                 return None
 
         data_from_hash = data
+        has_discounts = any(float(item.get('Discount %', 0)) > 0 for item in data_from_hash)
+
+        # Calculate subtotals
+        subtotal_before = 0.0
+        subtotal_after = 0.0
+        for r in data_from_hash:
+            unit_price = float(r.get('Price per item', 0))
+            qty = float(r.get('Quantity', 1))
+            disc_pct = float(r.get('Discount %', 0))
+            discounted_price = unit_price * (1 - disc_pct / 100)
+            subtotal_before += unit_price * qty
+            subtotal_after += discounted_price * qty
+
+        discount_amount = subtotal_before - subtotal_after
+        overall_disc_amount = max(subtotal_after - total, 0.0) if abs(subtotal_after - total) > 0.01 else 0.0
+        total_after_discount = total if overall_disc_amount > 0 else subtotal_after
+
         temp_files = []
 
-        # Styles
-        product_name_style = ParagraphStyle(name='ProductName', parent=styles['Normal'], fontSize=24, leading=28, alignment=0, spaceAfter=6, leftIndent=100)
-        cat_warr_style = ParagraphStyle(name='CatWarr', parent=styles['Normal'], fontSize=12, leading=14, alignment=0, spaceAfter=12, leftIndent=100)
-        overview_title_style = ParagraphStyle(name='OverviewTitle', parent=styles['Normal'], fontSize=14, leading=16, fontName='Helvetica-Bold', alignment=0, spaceAfter=6, leftIndent=100)
-        overview_text_style = ParagraphStyle(name='OverviewText', parent=styles['Normal'], fontSize=12, leading=14, alignment=0, leftIndent=100)
-        specs_title_style = ParagraphStyle(name='SpecsTitle', parent=styles['Normal'], fontSize=16, leading=20, alignment=0, spaceAfter=0)
-        feature_title_style = ParagraphStyle(name='FeatureTitle', parent=styles['Normal'], fontSize=16, leading=16, textColor=colors.orange, spaceBefore=12, spaceAfter=6, leftIndent=42)
-        bullet_style = ParagraphStyle(name='Bullet', parent=styles['Normal'], fontSize=14, leading=14, leftIndent=70, firstLineIndent=-10, spaceAfter=4)
-        bar_label_style = ParagraphStyle(name='BarLabel', parent=styles['Normal'], fontSize=12, leading=14, alignment=0)
-        bottom_box_style = ParagraphStyle(name='BottomBox', parent=styles['Normal'], fontSize=12, leading=14, alignment=1)
+        # Define styles for product pages
+        product_name_style = ParagraphStyle(
+            name='ProductName',
+            parent=styles['Normal'],
+            fontSize=24,
+            leading=28,
+            alignment=0,  # Left align for right column
+            spaceAfter=6,
+            leftIndent=100  # Shift to the right
+        )
 
-        # Build product pages
+        cat_warr_style = ParagraphStyle(
+            name='CatWarr',
+            parent=styles['Normal'],
+            fontSize=12,
+            leading=14,
+            alignment=0,  # Left
+            spaceAfter=12,
+            leftIndent=100  # Shift to the right
+        )
+
+        overview_title_style = ParagraphStyle(
+            name='OverviewTitle',
+            parent=styles['Normal'],
+            fontSize=14,
+            leading=16,
+            fontName='Helvetica-Bold',
+            alignment=0,
+            spaceAfter=6,
+            leftIndent=100  # Align with other right column content
+        )
+
+        overview_text_style = ParagraphStyle(
+            name='OverviewText',
+            parent=styles['Normal'],
+            fontSize=12,
+            leading=14,
+            alignment=0,
+            leftIndent=100  # Shift description to the right
+        )
+
+        specs_title_style = ParagraphStyle(
+            name='SpecsTitle',
+            parent=styles['Normal'],
+            fontSize=16,
+            leading=20,
+            alignment=0,
+            spaceAfter=0  # Changed to 0 to make it directly above
+        )
+
+        feature_title_style = ParagraphStyle(
+            name='FeatureTitle',
+            parent=styles['Normal'],
+            fontSize=16,
+            leading=16,
+            textColor=colors.orange,
+            spaceBefore=12,
+            spaceAfter=6,
+            leftIndent=42  # Shift features to the right
+        )
+
+        bullet_style = ParagraphStyle(
+            name='Bullet',
+            parent=styles['Normal'],
+            fontSize=14,
+            leading=14,
+            leftIndent=70,  # Increased indent for bullets
+            firstLineIndent=-10,
+            spaceAfter=4
+        )
+
+        bar_label_style = ParagraphStyle(
+            name='BarLabel',
+            parent=styles['Normal'],
+            fontSize=12,
+            leading=14,
+            alignment=0
+        )
+
+        bottom_box_style = ParagraphStyle(
+            name='BottomBox',
+            parent=styles['Normal'],
+            fontSize=12,
+            leading=14,
+            alignment=1  # Center
+        )
+
+        # Build product pages - one per product
         for idx, r in enumerate(data_from_hash, 1):
             if idx > 1:
                 elems.append(PageBreak())
 
-            # Product overview
-            description = safe_str(r.get('Description', 'No description available.'))
+            # Product Overview with Image side by side, including name and details
+            description = r.get('Description', 'No description available.')
             overview_title = Paragraph("Product Overview", overview_title_style)
             overview_para = Paragraph(description, overview_text_style)
 
-            # Image
+            # Create image with proper error handling
             img_element = Paragraph("No Image", styles['Normal'])
             if r.get("Image"):
                 download_url = convert_google_drive_url_for_storage(r["Image"])
-                temp_img_path = download_image_for_pdf(download_url, max_size=(150, 150))
+                temp_img_path = download_image_for_pdf(download_url, max_size=(300, 300)) 
                 if temp_img_path and os.path.exists(temp_img_path):
                     try:
+                        # Create a custom flowable with rounded border
                         class BorderedImage(Flowable):
-                            def __init__(self, img_path, width=150, height=150, radius=10):
+                            def __init__(self, img_path, width=200, height=200, radius=10):
                                 Flowable.__init__(self)
                                 self.img_path = img_path
                                 self.width = width
                                 self.height = height
                                 self.radius = radius
+                                
                             def wrap(self, *args):
                                 return self.width, self.height
+                                
                             def draw(self):
+                                # Set line properties BEFORE drawing the rectangle
                                 self.canv.setLineWidth(1.5)
                                 self.canv.setStrokeColor(colors.orange)
+                                
+                                # Correct roundRect usage with only positional and basic parameters
                                 self.canv.roundRect(0, 0, self.width, self.height, self.radius, stroke=1, fill=0)
+                                
+                                # Draw the image inside with proper padding
                                 img = RLImage(self.img_path)
                                 img.drawWidth = self.width - 8
                                 img.drawHeight = self.height - 8
                                 img.drawOn(self.canv, 4, 4)
+                        
                         img_element = BorderedImage(temp_img_path)
                         temp_files.append(temp_img_path)
                     except Exception as e:
                         print(f"Error creating bordered image: {e}")
-                        img_element = Paragraph("Image Error", styles['Normal'])
+                        # Fallback to regular image without border
+                        try:
+                            img = RLImage(temp_img_path)
+                            img.drawWidth = 150
+                            img.drawHeight = 150
+                            img_element = img
+                        except:
+                            img_element = Paragraph("Image Processing Error", styles['Normal'])
+                else:
+                    img_element = Paragraph("Image Not Found", styles['Normal'])
 
             # Flakeekeke image
             flake_image = Paragraph("Flakeekeke Image Not Found", styles['Normal'])
@@ -2609,49 +2803,57 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
             if os.path.exists(flake_image_path):
                 try:
                     img = RLImage(flake_image_path)
-                    img.drawWidth = 300
+                    img.drawWidth = 300  # Increased width to stretch
                     img.drawHeight = 50
-                    flake_image_table = LongTable([[img]], colWidths=[300], rowHeights=None)
+                    # Wrap image in a table to apply left indent
+                    flake_image_table = Table([[img]], colWidths=[300], rowHeights=[50])
                     flake_image_table.setStyle(TableStyle([
-                        ('LEFTPADDING', (0, 0), (-1, -1), 110),
+                        ('LEFTPADDING', (0, 0), (-1, -1), 110),  # Shift right to align with product name
                         ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
                     ]))
                     flake_image = flake_image_table
                 except Exception as e:
                     print(f"Error loading flakeekeke image: {e}")
+                    flake_image = Paragraph("Flakeekeke Image Processing Error", styles['Normal'])
+            else:
+                print(f"Flakeekeke image not found at: {flake_image_path}")
 
-            # Horizontal line
-            hr_data_flake = [["", "", "", ""]]
-            hr_table_flake = LongTable(hr_data_flake, colWidths=[80, 350], rowHeights=None)
+            # Horizontal line under flakeekeke image
+            hr_data_flake = [["","","",""]]  
+            hr_table_flake = Table(hr_data_flake, colWidths=[80, 350], rowHeights=4)
+
             hr_table_flake.setStyle(TableStyle([
-                ('BACKGROUND', (1, 0), (1, 0), colors.darkorange),
+                ('BACKGROUND', (1, 0), (1, 0), colors.darkorange),  # only color the second column
                 ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
             ]))
 
-            # Product name and category/warranty
+            # Product Name
             product_name_para = Paragraph(safe_str(r.get('Item', 'Product Name')), product_name_style)
+
+            # Category and Warranty with bold labels
             cat_warr_text = f"<b>Category:</b> Reception & Seating<br/><b>Warranty:</b> {safe_str(r.get('Warranty', '2 Years'))}"
             cat_warr_para = Paragraph(cat_warr_text, cat_warr_style)
 
-            # Right column content
+            # Right column content: flakeekeke image, hr, spacer, name, cat_warr, overview title, overview
             right_content_data = [
                 [flake_image],
-                [hr_table_flake],
-                [Spacer(1, 5)],
+                [hr_table_flake],  # New horizontal line under flakeekeke image
+                [Spacer(1, 5)],  # Reduced spacer to move image up slightly
                 [product_name_para],
                 [cat_warr_para],
                 [overview_title],
                 [overview_para]
             ]
-            right_content_table = LongTable(right_content_data, colWidths=[420], rowHeights=None)
+            right_content_table = Table(right_content_data, colWidths=[420])
             right_content_table.setStyle(TableStyle([
                 ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ]))
 
-            # Side-by-side layout
+            # Create side-by-side layout
             side_data = [[img_element, right_content_table]]
-            side_table = LongTable(side_data, colWidths=[180, 420], rowHeights=None)
+            side_col_widths = [180, 420]
+            side_table = Table(side_data, colWidths=side_col_widths, rowHeights=260)  # Height accommodates layout
             side_table.setStyle(TableStyle([
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                 ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
@@ -2661,10 +2863,11 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
             ]))
             elems.append(side_table)
-            elems.append(Spacer(1, 12))
 
-            # Horizontal line
-            hr_table = LongTable([[""]], colWidths=[600], rowHeights=None)
+            # Add horizontal line after product overview
+            elems.append(Spacer(1, 12))
+            hr_data = [[""]]
+            hr_table = Table(hr_data, colWidths=[600], rowHeights=2)
             hr_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), colors.orange),
                 ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
@@ -2672,11 +2875,15 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
             elems.append(hr_table)
             elems.append(Spacer(1, 12))
 
-            # Specifications
-            specs_title_right_style = ParagraphStyle('SpecsTitleRight', parent=specs_title_style, leftIndent=65)
+            # SPECIFICATIONS
+            specs_title_right_style = ParagraphStyle(
+                'SpecsTitleRight',
+                parent=specs_title_style,
+                leftIndent=65  # Adjust this value (30 points = ~0.42 inches)
+            )
             elems.append(Paragraph("SPECIFICATIONS", specs_title_right_style))
 
-            # Specs and features
+            # Specs table (left)
             specs_data = [
                 ["Structure", ""],
                 ["Cover", ""],
@@ -2687,7 +2894,8 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
                 ["Certification", ""],
                 ["Maintenance", ""],
             ]
-            specs_table = LongTable(specs_data, colWidths=[100, 100], rowHeights=None)
+            specs_col_widths = [100, 100]  
+            specs_table = Table(specs_data, colWidths=specs_col_widths, rowHeights=[30]*8)  # Increased row height to 30
             specs_table.setStyle(TableStyle([
                 ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
                 ('FONTSIZE', (0, 0), (-1, -1), 12),
@@ -2695,122 +2903,217 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ]))
 
-            # Features
+            # Features (right) - hardcoded to match image exactly
+            ergonomic_title = Paragraph("Ergonomic & Comfort Features:", feature_title_style)
+            ergonomic_bullets = [
+                Paragraph("• Wide seat base for maximum", bullet_style),
+                Paragraph("• Supportive high-density foam discomfort", bullet_style),
+            ]
+
+            durability_title = Paragraph("Durability & Warranty:", feature_title_style)
+            durability_bullets = [
+                Paragraph("• Solid beech wood ensures long", bullet_style),
+                Paragraph("• Protective finish for wear", bullet_style),
+                Paragraph("• Standard 2-year warranty, care", bullet_style),
+            ]
+
+            customization_title = Paragraph("Customization Options:", feature_title_style)
+            customization_bullets = [
+                Paragraph("• Multiple upholstery colors", bullet_style),
+                Paragraph("• Optional wood stain finishes to", bullet_style),
+            ]
+
+            sustainability_title = Paragraph("Sustainability:", feature_title_style)
+            sustainability_bullets = [
+                Paragraph("• Wood sourced from FSC-certified", bullet_style),
+                Paragraph("• Low-VOC finishes for healthier.", bullet_style),
+            ]
+
             right_flowables = (
-                [Paragraph("Ergonomic & Comfort Features:", feature_title_style)] +
-                [Paragraph("• Wide seat base for maximum", bullet_style),
-                 Paragraph("• Supportive high-density foam discomfort", bullet_style)] +
-                [Paragraph("Durability & Warranty:", feature_title_style)] +
-                [Paragraph("• Solid beech wood ensures long", bullet_style),
-                 Paragraph("• Protective finish for wear", bullet_style),
-                 Paragraph("• Standard 2-year warranty, care", bullet_style)] +
-                [Paragraph("Customization Options:", feature_title_style)] +
-                [Paragraph("• Multiple upholstery colors", bullet_style),
-                 Paragraph("• Optional wood stain finishes to", bullet_style)] +
-                [Paragraph("Sustainability:", feature_title_style)] +
-                [Paragraph("• Wood sourced from FSC-certified", bullet_style),
-                 Paragraph("• Low-VOC finishes for healthier.", bullet_style)]
+                [ergonomic_title] + ergonomic_bullets +
+                [durability_title] + durability_bullets +
+                [customization_title] + customization_bullets +
+                [sustainability_title] + sustainability_bullets
             )
-            right_table = LongTable([[f] for f in right_flowables], colWidths=[300], rowHeights=None)
+
+            right_data = [[f] for f in right_flowables]
+            right_table = Table(right_data, colWidths=[300])
             right_table.setStyle(TableStyle([
                 ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ]))
 
-            specs_features_table = LongTable([[specs_table, right_table]], colWidths=[250, 350], rowHeights=None)
+            # Side by side specs and features
+            specs_features_data = [[specs_table, right_table]]
+            specs_features_col_widths = [250, 350]
+            specs_features_table = Table(specs_features_data, colWidths=specs_features_col_widths)
             specs_features_table.setStyle(TableStyle([
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                 ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
             ]))
             elems.append(specs_features_table)
+
             elems.append(Spacer(1, 12))
 
             # Horizontal line
-            hr_table = LongTable([[""]], colWidths=[600], rowHeights=None)
+            hr_data = [[""]]
+            hr_table = Table(hr_data, colWidths=[600], rowHeights=2)
             hr_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), colors.orange),
                 ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
             ]))
             elems.append(hr_table)
+
             elems.append(Spacer(1, 12))
 
-            # Warranty and customization bars
+            # Warranty bar
             warranty_label = Paragraph("Warranty", bar_label_style)
             total_bar_width = 300
-            warranty_years = 0
+            warranty_years = 0  # Default to 0
             if r.get('Warranty') is not None:
+                warranty_value = r['Warranty']
                 try:
-                    warranty_value = safe_str(r['Warranty'])
-                    match = re.match(r'(\d+\.?\d*)\s*(?:year|yrs)?', warranty_value, re.IGNORECASE)
-                    warranty_years = float(match.group(1)) if match else 0
+                    if isinstance(warranty_value, (int, float)):
+                        warranty_years = float(warranty_value)
+                    elif isinstance(warranty_value, str):
+                        # Extract numeric part from strings like "1year", "1 Year", "1 yrs"
+                        match = re.match(r'(\d+\.?\d*)\s*(?:year|yrs)?', safe_str(warranty_value), re.IGNORECASE)
+                        warranty_years = float(match.group(1)) if match else 0
+                    print(f"Parsed warranty_years: {warranty_years} for product {r.get('Item', 'Unknown')}")
                 except Exception as e:
-                    print(f"Error parsing warranty: {e}")
+                    print(f"Error parsing warranty for product {r.get('Item', 'Unknown')}: {e}")
+                    warranty_years = 0
+
+            # Ensure filled_width is positive and not exceeding total_bar_width
             filled_width = max(0, min((warranty_years / 10.0) * total_bar_width, total_bar_width))
-            bar_data = [["", ""]] if filled_width > 0 else [[""]]
-            bar_col_widths = [filled_width, total_bar_width - filled_width] if filled_width > 0 else [total_bar_width]
-            bar_table = LongTable(bar_data, colWidths=bar_col_widths, rowHeights=None)
+            print(f"Calculated filled_width: {filled_width} for warranty_years: {warranty_years}")
+
+            # Create the main bar
+            if filled_width > 0:
+                bar_data = [["", ""]]
+                bar_col_widths = [filled_width, total_bar_width - filled_width]
+            else:
+                bar_data = [[""]]
+                bar_col_widths = [total_bar_width]  # Full bar unfilled if warranty is 0 or invalid
+
+            bar_table = Table(bar_data, colWidths=bar_col_widths, rowHeights=10)
             bar_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (0, 0), colors.black),
-                ('BACKGROUND', (1, 0), (1, 0), colors.lightgrey) if filled_width > 0 else ('BACKGROUND', (0, 0), (0, 0), colors.lightgrey),
+                ('BACKGROUND', (0, 0), (0, 0), colors.black),  # Filled portion
+                ('BACKGROUND', (1, 0), (1, 0), colors.lightgrey) if filled_width > 0 else ('BACKGROUND', (0, 0), (0, 0), colors.lightgrey),  # Unfilled portion or full bar if no fill
                 ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
             ]))
-            pointer_data = [[Paragraph(str(i), ParagraphStyle('PointerHighlight' if i <= warranty_years else 'PointerNormal', parent=bar_label_style, fontSize=8, textColor=colors.black if i <= warranty_years else colors.grey, fontName='Helvetica-Bold' if i <= warranty_years else 'Helvetica')) for i in range(11)]]
-            pointer_table = LongTable(pointer_data, colWidths=[total_bar_width / 10] * 11, rowHeights=None)
+
+            # Create number pointers (0-10) above the bar
+            pointer_width = total_bar_width / 10  # Each number gets equal space
+            pointer_data = [[]]
+            pointer_col_widths = []
+
+            for i in range(11):  # 0 to 10
+                # Create paragraph for each number
+                if i <= warranty_years:
+                    # Highlight numbers up to warranty years
+                    pointer_style = ParagraphStyle(
+                        'PointerHighlight',
+                        parent=bar_label_style,
+                        fontSize=8,
+                        textColor=colors.black,
+                        fontName='Helvetica-Bold'
+                    )
+                else:
+                    # Normal style for numbers beyond warranty
+                    pointer_style = ParagraphStyle(
+                        'PointerNormal', 
+                        parent=bar_label_style,
+                        fontSize=8,
+                        textColor=colors.grey
+                    )
+                
+                pointer_data[0].append(Paragraph(str(i), pointer_style))
+                pointer_col_widths.append(pointer_width)
+
+            # Create table for number pointers
+            pointer_table = Table(pointer_data, colWidths=pointer_col_widths, rowHeights=15)
             pointer_table.setStyle(TableStyle([
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
             ]))
-            bar_section_table = LongTable([[pointer_table], [bar_table]], colWidths=[total_bar_width], rowHeights=None)
+
+            # Create the complete bar section with pointers above
+            bar_section_data = [
+                [pointer_table],  # Numbers on top
+                [bar_table]       # Bar below
+            ]
+            bar_section_table = Table(bar_section_data, colWidths=[total_bar_width], rowHeights=[15, 10])
             bar_section_table.setStyle(TableStyle([
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
             ]))
-            bar_row_data = [[Paragraph("0", bar_label_style), bar_section_table, Paragraph("10 yrs", bar_label_style)]]
-            bar_row_table = LongTable(bar_row_data, colWidths=[30, total_bar_width, 50], rowHeights=None)
+
+            # Create labels for 0 and 10 years
+            label_0 = Paragraph("0", bar_label_style)
+            label_10 = Paragraph("10 yrs", bar_label_style)
+
+            # Combine everything in the final row
+            bar_row_data = [[label_0, bar_section_table, label_10]]
+            bar_row_col_widths = [30, total_bar_width, 50]
+            bar_row_table = Table(bar_row_data, colWidths=bar_row_col_widths)
             bar_row_table.setStyle(TableStyle([
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('ALIGN', (0, 0), (0, 0), 'RIGHT'),
                 ('ALIGN', (2, 0), (2, 0), 'LEFT'),
                 ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
             ]))
-            warranty_table = LongTable([[warranty_label, bar_row_table]], colWidths=[100, 380], rowHeights=None)
+
+            # Final warranty table
+            warranty_row_data = [[warranty_label, bar_row_table]]
+            warranty_row_col_widths = [100, 380]
+            warranty_table = Table(warranty_row_data, colWidths=warranty_row_col_widths)
             warranty_table.setStyle(TableStyle([
                 ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ]))
             elems.append(warranty_table)
 
+            # Customization bar (hardcoded to match image, assuming mid-high)
             customization_label = Paragraph("Customization", bar_label_style)
-            customization_level = 0.6
+            customization_level = 0.6  # Approximate from image
             filled_width_c = customization_level * total_bar_width
-            bar_table_c = LongTable(bar_data, colWidths=[filled_width_c, total_bar_width - filled_width_c], rowHeights=None)
+            bar_table_c = Table(bar_data, colWidths=[filled_width_c, total_bar_width - filled_width_c], rowHeights=10)
             bar_table_c.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (0, 0), colors.black),
                 ('BACKGROUND', (1, 0), (1, 0), colors.lightgrey),
                 ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
             ]))
-            bar_row_table_c = LongTable([[Paragraph("0", bar_label_style), bar_table_c, Paragraph("High", bar_label_style)]], colWidths=[30, total_bar_width, 50], rowHeights=None)
+            label_high = Paragraph("High", bar_label_style)
+            bar_row_data_c = [[label_0, bar_table_c, label_high]]
+            bar_row_table_c = Table(bar_row_data_c, colWidths=bar_row_col_widths)
             bar_row_table_c.setStyle(TableStyle([
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('ALIGN', (0, 0), (0, 0), 'RIGHT'),
                 ('ALIGN', (2, 0), (2, 0), 'LEFT'),
                 ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
             ]))
-            customization_table = LongTable([[customization_label, bar_row_table_c]], colWidths=[100, 380], rowHeights=None)
+            customization_row_data = [[customization_label, bar_row_table_c]]
+            customization_table = Table(customization_row_data, colWidths=warranty_row_col_widths)
             customization_table.setStyle(TableStyle([
                 ('GRID', (0, 0), (-1, -1), 0, colors.transparent),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ]))
             elems.append(customization_table)
+
             elems.append(Spacer(1, 24))
 
-            # Bottom table
-            bottom_data = [[Paragraph(f"Price<br/>{safe_float(r.get('Price per item', 0))} LE", bottom_box_style),
-                           Paragraph(f"Quantity<br/>{safe_str(r.get('Quantity', ''))}", bottom_box_style),
-                           Paragraph(f"Total<br/>{safe_float(r.get('Total price', 0))} LE", bottom_box_style)]]
-            bottom_table = LongTable(bottom_data, colWidths=[150, 150, 150], rowHeights=None)
+            # Bottom price, quantity, total boxes
+            price_text = f"Price<br/>{safe_float(r.get('Price per item', 0))} LE"
+            quantity_text = f"Quantity<br/>{safe_str(r.get('Quantity', ''))}"
+            total_text = f"Total<br/>{safe_float(r.get('Total price', 0))} LE"
+            bottom_data = [[Paragraph(price_text, bottom_box_style),
+                            Paragraph(quantity_text, bottom_box_style),
+                            Paragraph(total_text, bottom_box_style)]]
+            bottom_col_widths = [150, 150, 150]
+            bottom_table = Table(bottom_data, colWidths=bottom_col_widths, rowHeights=50)
             bottom_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), colors.white),
                 ('GRID', (0, 0), (-1, -1), 1, colors.orange),
@@ -2819,7 +3122,7 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
             ]))
             elems.append(bottom_table)
 
-        # Closure page
+        # === Closure Page ===
         if closure_path and os.path.exists(closure_path):
             elems.append(PageBreak())
             elems.append(Spacer(1, 1))
@@ -2830,20 +3133,71 @@ def build_pdf_cached_tech(data_hash, total, company_details, hdr_path="q2.png", 
             doc.build(elems, onFirstPage=header_footer, onLaterPages=header_footer)
         except Exception as e:
             print(f"PDF build failed: {e}")
-            st.error(f"PDF generation failed: {e}")
             raise
         finally:
             for temp_file in temp_files:
                 try:
-                    if os.path.exists(temp_file):
-                        os.unlink(temp_file)
+                    os.unlink(temp_file)
                 except Exception as e:
                     print(f"Failed to delete temp file: {e}")
+
         return pdf_path
 
+    # Ensure data is in session state
+    import streamlit as st
     st.session_state.pdf_data = st.session_state.get('pdf_data', [])
-    return build_pdf(st.session_state.pdf_data, total, company_details, hdr_path, ftr_path,
-                     intro_path, closure_path, bg_path)
+
+    # Pass the actual data
+    return build_pdf(st.session_state.pdf_data, total, company_details, hdr_path, ftr_path, 
+                    intro_path, closure_path, bg_path)
+
+
+
+def load_user_history_from_sheet(user_email, sheet):
+    """Load user's quotation history from Google Sheet with fallbacks"""
+    if sheet is None:
+        return []
+    try:
+        df = get_as_dataframe(sheet)
+        df.dropna(how='all', inplace=True)  # Remove completely empty rows
+        user_rows = df[df["User Email"].str.lower() == user_email.lower()]
+        history = []
+        import json
+        for _, row in user_rows.iterrows():
+            try:
+                items = json.loads(row["Items JSON"])
+                company_details_raw = row.get("Company Details JSON", "{}")
+                try:
+                    company_details = json.loads(company_details_raw) if pd.notna(company_details_raw) and company_details_raw.strip() != "" else {}
+                except:
+                    company_details = {}
+
+                # 🔐 Generate fallback hash if not present
+                stored_hash = str(row.get("Quotation Hash", "")).strip()
+                if not stored_hash or stored_hash.lower() == "nan":
+                    # Create deterministic fallback hash
+                    fallback_data = f"{row['Company Name']}{row['Timestamp']}{row['Total']}"
+                    stored_hash = hashlib.md5(fallback_data.encode()).hexdigest()
+
+                history.append({
+                    "user_email": row["User Email"],
+                    "timestamp": row["Timestamp"],
+                    "company_name": row["Company Name"],
+                    "contact_phone": row["Contact Phone"],
+                    "contact_person": row["Contact Person"],
+                    "total": float(row["Total"]),
+                    "items": items,
+                    "pdf_filename": row["PDF Filename"],
+                    "hash": stored_hash,  # Always ensure this exists
+                    "company_details": company_details
+                })
+            except Exception as e:
+                st.warning(f"⚠️ Skipping malformed row (Company: {row.get('Company Name', 'Unknown')}): {e}")
+                continue
+        return history
+    except Exception as e:
+        st.error(f"❌ Failed to load history: {e}")
+        return []
 
 
 # Before generating PDF
@@ -2899,7 +3253,7 @@ if st.button("📅 Generate Financial Quotation") and output_data:
             st.warning("⚠️ Could not connect to Google Sheet. Quotation saved locally only.")
         history_sheet = get_history_sheet()
         if history_sheet:
-            st.session_state.history = load_user_history(st.session_state.user_email, history_sheet)
+            st.session_state.history = load_user_history_from_sheet(st.session_state.user_email, history_sheet)
             st.success("✅ History refreshed from Google Sheet!")
         else:
             st.error("Failed to connect to Google Sheets.")
@@ -2964,7 +3318,7 @@ if st.button("📅 Generate technical Quotation ") and output_data:
             st.warning("⚠️ Could not connect to Google Sheet. Quotation saved locally only.")
         history_sheet = get_history_sheet()
         if history_sheet:
-            st.session_state.history = load_user_history(st.session_state.user_email, history_sheet)
+            st.session_state.history = load_user_history_from_sheet(st.session_state.user_email, history_sheet)
             st.success("✅ History refreshed from Google Sheet!")
         else:
             st.error("Failed to connect to Google Sheets.")
