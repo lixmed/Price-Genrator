@@ -2899,7 +2899,7 @@ if st.button("📅 Generate Financial Quotation") and output_data:
             st.warning("⚠️ Could not connect to Google Sheet. Quotation saved locally only.")
         history_sheet = get_history_sheet()
         if history_sheet:
-            st.session_state.history = load_user_history_from_sheet(st.session_state.user_email, history_sheet)
+            st.session_state.history = load_user_history(st.session_state.user_email, history_sheet)
             st.success("✅ History refreshed from Google Sheet!")
         else:
             st.error("Failed to connect to Google Sheets.")
@@ -2964,7 +2964,7 @@ if st.button("📅 Generate technical Quotation ") and output_data:
             st.warning("⚠️ Could not connect to Google Sheet. Quotation saved locally only.")
         history_sheet = get_history_sheet()
         if history_sheet:
-            st.session_state.history = load_user_history_from_sheet(st.session_state.user_email, history_sheet)
+            st.session_state.history = load_user_history(st.session_state.user_email, history_sheet)
             st.success("✅ History refreshed from Google Sheet!")
         else:
             st.error("Failed to connect to Google Sheets.")
