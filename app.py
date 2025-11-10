@@ -1233,10 +1233,13 @@ if st.session_state.role == "admin":
                 # VAT rate selection
                 selected_vat_rate = st.selectbox(
                     "Select VAT Rate (%)",
-                    options=[14, 13],
-                    index=0 if existing_data.get("vat_rate", 0.14) == 0.14 else 1
+                    options=[0, 13, 14, 15],
+                    index=[0, 13, 14, 15].index(int(existing_data.get("vat_rate", 0.14) * 100)) if int(existing_data.get("vat_rate", 0.14) * 100) in [0, 13, 14, 15] else 2
                 )
-                vat_note = f"Prices exclude {selected_vat_rate}% VAT"
+                if selected_vat_rate > 0:
+                    vat_note = f"Prices exclude {selected_vat_rate}% VAT"
+                else:
+                    vat_note = "No VAT applied"
                 
                 shipping_note = st.text_input("Shipping Note", 
                                             value=existing_data.get("shipping_note", "Shipping & Installation fees to be added"))
@@ -1529,10 +1532,13 @@ elif st.session_state.role == "buyer":
                 # VAT rate selection
                 selected_vat_rate = st.selectbox(
                     "Select VAT Rate (%)",
-                    options=[14, 13],
-                    index=0 if existing_data.get("vat_rate", 0.14) == 0.14 else 1
+                    options=[0, 13, 14, 15],
+                    index=[0, 13, 14, 15].index(int(existing_data.get("vat_rate", 0.14) * 100)) if int(existing_data.get("vat_rate", 0.14) * 100) in [0, 13, 14, 15] else 2
                 )
-                vat_note = f"Prices exclude {selected_vat_rate}% VAT"
+                if selected_vat_rate > 0:
+                    vat_note = f"Prices exclude {selected_vat_rate}% VAT"
+                else:
+                    vat_note = "No VAT applied"
                 
                 shipping_note = st.text_input("Shipping Note", 
                                             value=existing_data.get("shipping_note", "Shipping & Installation fees to be added"))
@@ -2063,16 +2069,15 @@ def download_image_for_pdf(url, max_size=(300, 300)):
         return None
 
 @st.cache_data
-def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png", 
-                    intro_path="FT-Quotation-Temp-financial.jpg", closure_path="FT-Quotation-Temp-2.jpg",
-                    bg_path="FT Quotation Temp[1](1).jpg"):
+def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png",
+                     intro_path="FT-Quotation-Temp-financial.jpg", closure_path="FT-Quotation-Temp-2.jpg",
+                     bg_path="FT Quotation Temp[1](1).jpg"):
     
     def build_pdf(data, total, company_details, hdr_path, ftr_path, intro_path, closure_path, bg_path):
         # Create temp file
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
         pdf_path = tmp.name
         tmp.close()
-
         doc = SimpleDocTemplate(
             pdf_path,
             pagesize=A3,
@@ -2085,7 +2090,6 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         elems = []
         styles['Normal'].fontSize = 14
         styles['Normal'].leading = 20
-
         aligned_style = ParagraphStyle(
             name='LeftAligned',
             parent=styles['Normal'],
@@ -2094,44 +2098,40 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             spaceAfter=12,
             leftIndent=50
         )
-
         # Variables to track page structure
         cover_page = 1
         content_start_page = 2
         closure_page_num = None
-
         def header_footer(canvas, doc):
             canvas.saveState()
             page_num = canvas.getPageNumber()
-            
+           
             # Draw full-page cover image on first page
             if page_num == cover_page and intro_path and os.path.exists(intro_path):
                 canvas.drawImage(intro_path, 0, 0, width=A3[0], height=A3[1])
                 canvas.restoreState()
                 return
-            
+           
             # Draw full-page closure image on last page
             if closure_page_num is not None and page_num == closure_page_num and closure_path and os.path.exists(closure_path):
                 canvas.drawImage(closure_path, 0, 0, width=A3[0], height=A3[1])
                 canvas.restoreState()
                 return
-            
+           
             # Draw background image on content pages
             if bg_path and os.path.exists(bg_path) and page_num >= content_start_page and (closure_page_num is None or page_num < closure_page_num):
                 canvas.drawImage(bg_path, 0, 0, width=A3[0], height=A3[1], preserveAspectRatio=True, mask='auto')
-            
+           
             # Add page numbering for content pages only
             if page_num >= content_start_page and (closure_page_num is None or page_num < closure_page_num):
                 canvas.setFont('Helvetica', 10)
                 content_page_num = page_num - content_start_page + 1
                 canvas.drawRightString(doc.width + doc.leftMargin, 40, f"Page {content_page_num}")
-            
+           
             canvas.restoreState()
-
         # === Cover Page ===
         if intro_path and os.path.exists(intro_path):
             elems.append(PageBreak())
-
         # === Company Details ===
         detail_lines = [
             "<para align='left'><font size=14>",
@@ -2153,7 +2153,6 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         
         elems.append(Spacer(1, 20))
         elems.append(Paragraph(details, aligned_style))
-
         # === Terms & Conditions ===
         terms_conditions = f"""
         <para align="left">
@@ -2169,7 +2168,6 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         """
         elems.append(Spacer(1, 15))
         elems.append(Paragraph(terms_conditions, aligned_style))
-
         # === Payment Info ===
         payment_info = f"""
         <para align="left">
@@ -2189,23 +2187,17 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         
         # Always start table on new page to avoid layout issues
         elems.append(PageBreak())
-
         # === Table Setup ===
         desc_style = ParagraphStyle(name='Description', fontSize=10, leading=11, alignment=TA_CENTER)
         styleN = ParagraphStyle(name='Normal', fontSize=10, leading=10, alignment=TA_CENTER)
-
         def is_empty(val):
             return pd.isna(val) or val is None or str(val).lower() == 'nan' or str(val).strip() == ''
-
         def safe_str(val):
             return "" if is_empty(val) else str(val)
-
         def safe_float(val):
             return "" if is_empty(val) else f"{float(val):.2f}"
-
         data_from_hash = data
         has_discounts = any(float(item.get('Discount %', 0)) > 0 for item in data_from_hash)
-
         # Calculate subtotals
         subtotal_before = 0.0
         subtotal_after = 0.0
@@ -2216,33 +2208,27 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             discounted_price = unit_price * (1 - disc_pct / 100)
             subtotal_before += unit_price * qty
             subtotal_after += discounted_price * qty
-
         discount_amount = subtotal_before - subtotal_after
         overall_disc_amount = max(subtotal_after - total, 0.0) if abs(subtotal_after - total) > 0.01 else 0.0
         total_after_discount = total if overall_disc_amount > 0 else subtotal_after
-
         # === Headers ===
         base_headers = ["Ser.", "Item", "Image", "SKU", "Specs", "QTY", "B.D.", "Net Price", "Total"]
         if has_discounts:
             base_headers.insert(8, "Disc %")
-
         # === Column Widths (optimized for A3) ===
         col_widths = [30, 75, 145, 55, 130, 45, 55, 65, 65]
         if has_discounts:
             col_widths.insert(8, 55)
         else:
             col_widths[4] += 55
-
         total_table_width = sum(col_widths)
         temp_files = []
-
         # === Estimate Paragraph Height ===
         def estimate_paragraph_height(text, style, width):
             para = Paragraph(text, style)
             used_width, used_height = para.wrap(width, 1000)
             return used_height
-
-        # === Build Product Table Data with Optimized Images ===
+        # === Build Product Row with Optimized Images ===
         def create_product_row(r, idx):
             img_element = Paragraph("No Image", styleN)
             if r.get("Image"):
@@ -2251,24 +2237,23 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 if temp_img_path and os.path.exists(temp_img_path):
                     try:
                         img = RLImage(temp_img_path)
-                        img.drawWidth = 300
-                        img.drawHeight = 300
+                        img.drawWidth = 145  # Match column width
+                        img.drawHeight = 120  # Reasonable height
                         img.hAlign = 'CENTER'
                         img.vAlign = 'MIDDLE'
                         img.preserveAspectRatio = True
-                        img_component = KeepInFrame(200, 150, [img], mode='shrink')
+                        img_component = KeepInFrame(145, 120, [img], mode='shrink')
                         img_element = img_component
                         temp_files.append(temp_img_path)
                     except Exception as e:
                         print(f"Error creating image element for {r.get('Item', 'Unknown')}: {e}")
                         img_element = Paragraph("Image Error", styleN)
-
             # Build description with conditional Dimensions
             desc_text = safe_str(r.get('Description'))
             color_text = safe_str(r.get('Color'))
             warranty_text = safe_str(r.get('Warranty'))
             dimensions_text = safe_str(r.get('Dimensions'))
-            
+           
             details_parts = [
                 f"<b>Description:</b> {desc_text}",
                 f"<b>Color:</b> {color_text}",
@@ -2276,21 +2261,17 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             ]
             if dimensions_text:
                 details_parts.append(f"<b>Dimensions:</b> {dimensions_text}")
-                
+               
             details_text = "<br/>".join(details_parts)
             details_para = Paragraph(details_text, desc_style)
-
             # Estimate the height needed for the description cell
             details_height = estimate_paragraph_height(details_text, desc_style, col_widths[4])
-
             unit_price = float(r.get('Price per item', 0))
             disc_pct = float(r.get('Discount %', 0))
             net_price = unit_price * (1 - disc_pct / 100)
-
             item_name = safe_str(r.get('Item'))
             if len(item_name) > 35:
                 item_name = item_name[:35] + "..."
-
             row = [
                 str(idx),
                 Paragraph(item_name, styleN),
@@ -2301,47 +2282,40 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 Paragraph(f"{unit_price:.2f}", styleN),
                 Paragraph(f"{net_price:.2f}", styleN),
             ]
-
             if has_discounts:
                 discount_val = safe_float(r.get('Discount %'))
                 row.insert(8, Paragraph(f"{discount_val}%", styleN))
-
             row.append(Paragraph(safe_float(r.get('Total price')), styleN))
             return row, details_height
-
         # === Calculate maximum rows per page based on available space ===
         page_height = A3[1]
         top_margin = 100
         bottom_margin = 250
-        header_height = 25
-        row_heights=150
-        row_heights = []
-        summary_row_height = 25
         spacer_height = 30
-        
-        available_height = page_height - top_margin - bottom_margin - header_height - spacer_height
-        
+        header_height = 25
+        summary_row_height = 25
+        available_height = page_height - top_margin - bottom_margin - spacer_height
         def calculate_rows_per_page(is_last_chunk=False, include_summary=False, row_heights=[]):
             height_for_table = available_height
-            if is_last_chunk and include_summary:
-                summary_rows = len(summary_data)
-                summary_height = summary_rows * summary_row_height
+            if include_summary:
+                summary_height = len(summary_data) * summary_row_height
                 height_for_table -= summary_height
-            if row_heights:
-                total_row_height = sum(row_heights)
-                max_rows = max(1, int(height_for_table // max(row_heights)))
-                if total_row_height > height_for_table:
-                    max_rows = min(max_rows, len(row_heights))
-                return min(max_rows, 8)
-            return min(int(height_for_table // base_row_height), 8)
-
+            current_height = header_height
+            max_rows = 0
+            for h in row_heights:
+                if current_height + h > height_for_table:
+                    break
+                current_height += h
+                max_rows += 1
+            if max_rows == 0 and row_heights:
+                max_rows = 1  # Try to fit at least one row if possible
+            return min(max_rows, 8)
         # === Build Summary Table Data ===
         vat_rate = company_details.get("vat_rate", 0.14)
         shipping_fee = float(company_details.get("shipping_fee", 0.0))
         installation_fee = float(company_details.get("installation_fee", 0.0))
         vat = (shipping_fee + total_after_discount) * vat_rate
         grand_total = total_after_discount + shipping_fee + installation_fee + vat
-
         summary_data = []
         has_any_discount = (discount_amount > 0 or overall_disc_amount > 0)
         if has_any_discount:
@@ -2353,51 +2327,46 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             summary_data.append(["Total After Discounts", f"{total_after_discount:.2f} EGP"])
         else:
             summary_data.append(["Total", f"{total_after_discount:.2f} EGP"])
-
         if shipping_fee > 0:
             summary_data.append(["Shipping Fee", f"{shipping_fee:.2f} EGP"])
         if installation_fee > 0:
             summary_data.append(["Installation Fee", f"{installation_fee:.2f} EGP"])
-
         summary_data.append([f"VAT ({int(vat_rate * 100)}%)", f"{vat:.2f} EGP"])
         summary_data.append(["Grand Total", f"{grand_total:.2f} EGP"])
-
         # Split products into chunks with dynamic row heights
         product_chunks = []
         remaining_products = data_from_hash[:]
         row_heights = []
-
         # Pre-calculate row heights for all products
         for idx, r in enumerate(data_from_hash, start=1):
             _, details_height = create_product_row(r, idx)
-            dynamic_height = details_height + 30  # generous padding
-            row_heights.append(max(100, dynamic_height))  # enforce minimum
+            dynamic_height = max(details_height + 20, 120)
+            row_heights.append(dynamic_height)
         current_idx = 0
         while remaining_products:
-            is_last_chunk = len(remaining_products) <= calculate_rows_per_page(True, include_summary=True, row_heights=row_heights[current_idx:])
-            rows_for_this_page = calculate_rows_per_page(is_last_chunk, include_summary=True, row_heights=row_heights[current_idx:])
-            
+            remaining_heights = row_heights[current_idx:]
+            temp_rows = calculate_rows_per_page(True, True, remaining_heights)
+            is_last_chunk = len(remaining_products) <= temp_rows
+            rows_for_this_page = calculate_rows_per_page(is_last_chunk, is_last_chunk, remaining_heights)
             chunk = remaining_products[:rows_for_this_page]
             chunk_heights = row_heights[current_idx:current_idx + rows_for_this_page]
             product_chunks.append((chunk, chunk_heights))
             remaining_products = remaining_products[rows_for_this_page:]
             current_idx += rows_for_this_page
-
         # Create tables for each chunk
         for chunk_idx, (chunk, chunk_heights) in enumerate(product_chunks):
             is_last_chunk = (chunk_idx == len(product_chunks) - 1)
-            
+           
             # Inside the loop where you build `chunk_table_data`
             chunk_table_data = [base_headers]
             chunk_row_heights = [header_height]  # First row = header
-
-            for idx, r in enumerate(chunk, start=1):
-                row, details_height = create_product_row(r, idx)
+            chunk_idx_start = sum(len(c[0]) for c in product_chunks[:chunk_idx]) + 1
+            for local_idx, r in enumerate(chunk, start=chunk_idx_start):
+                row, details_height = create_product_row(r, local_idx)
                 chunk_table_data.append(row)
                 # Use max to ensure minimum readability
                 actual_row_height = max(details_height + 20, 120)  # +20 for padding, min 120
                 chunk_row_heights.append(actual_row_height)
-
             # Build table with dynamic row heights
             chunk_table = Table(
                 chunk_table_data,
@@ -2419,7 +2388,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 ('TOPPADDING', (0, 0), (-1, -1), 5),
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
             ]))
-            
+           
             outer_data = [[chunk_table]]
             bottom_padding = 0 if is_last_chunk else 10
             outer_style = TableStyle([
@@ -2431,19 +2400,17 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             ])
             outer_table = Table(outer_data, colWidths=[total_table_width], style=outer_style)
             elems.append(outer_table)
-            
+           
             if is_last_chunk:
-                summary_rows = len(summary_data)
-                summary_height = summary_rows * summary_row_height
-                product_rows = len(chunk)
-                product_height = sum(chunk_heights)
+                product_height = sum(chunk_row_heights)
+                summary_height = len(summary_data) * summary_row_height
                 total_content_height = product_height + summary_height
-                
+               
                 summary_on_new_page = total_content_height > available_height
-                
+               
                 if summary_on_new_page:
                     elems.append(PageBreak())
-                
+               
                 summary_col_widths = [total_table_width - 150, 150]
                 summary_table = Table(summary_data, colWidths=summary_col_widths)
                 summary_table.setStyle(TableStyle([
@@ -2456,7 +2423,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                     ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
                     *[('TEXTCOLOR', (1, i), (1, i), colors.black) for i in [i for i, row in enumerate(summary_data) if "Discount" in row[0]]],
                 ]))
-                
+               
                 outer_summary_data = [[summary_table]]
                 outer_summary_style = TableStyle([
                     ('LEFTPADDING', (0, 0), (0, 0), 50),
@@ -2469,13 +2436,11 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                 elems.append(outer_summary)
             else:
                 elems.append(PageBreak())
-
         # === Closure Page ===
         if closure_path and os.path.exists(closure_path):
             elems.append(PageBreak())
             elems.append(Spacer(1, 1))
             closure_page_num = len([e for e in elems if isinstance(e, PageBreak)]) + 1
-
         # Build PDF
         try:
             doc.build(elems, onFirstPage=header_footer, onLaterPages=header_footer)
@@ -2489,12 +2454,10 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
                         os.unlink(temp_file)
                 except Exception as e:
                     print(f"Failed to delete temp file: {e}")
-
         return pdf_path
-
     st.session_state.pdf_data = st.session_state.get('pdf_data', [])
-    return build_pdf(st.session_state.pdf_data, total, company_details, hdr_path, ftr_path, 
-                    intro_path, closure_path, bg_path)
+    return build_pdf(st.session_state.pdf_data, total, company_details, hdr_path, ftr_path,
+                     intro_path, closure_path, bg_path)
 
 # #################### technical offer###################
 @st.cache_data
