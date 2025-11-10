@@ -1362,6 +1362,7 @@ if st.session_state.role == "admin":
                             del st.session_state.edit_mode
                         success_message = "✅ Details updated successfully!" if edit_mode else "✅ Details submitted successfully!"
                         st.success(success_message)
+                        # Preserve product data when updating details
                         st.rerun()
 
             # Always show this warning if form not submitted
@@ -1639,6 +1640,7 @@ elif st.session_state.role == "buyer":
                             del st.session_state.edit_mode
                         success_message = "✅ Details updated successfully!" if edit_mode else "✅ Details submitted successfully!"
                         st.success(success_message)
+                        # Preserve product data when updating details
                         st.rerun()
             
             # Always show this warning if form not submitted
@@ -1654,6 +1656,12 @@ if ((st.session_state.role == "buyer") or
     # Initialize session state for custom products if not exists
     if 'custom_products' not in st.session_state:
         st.session_state.custom_products = []
+    
+    if 'row_indices' not in st.session_state:
+        st.session_state.row_indices = [0]
+    
+    if 'selected_products' not in st.session_state:
+        st.session_state.selected_products = {}
     
     # Initialize shipping and installation fees if not exists
     if 'shipping_fee' not in st.session_state:
@@ -1683,6 +1691,43 @@ if ((st.session_state.role == "buyer") or
 
     if 'description_edits' not in st.session_state:
         st.session_state.description_edits = {}
+    
+    # Initialize quantity and discount session state for each product row
+    for idx in st.session_state.row_indices:
+        qty_key = f"qty_{idx}"
+        disc_key = f"disc_{idx}"
+        if qty_key not in st.session_state:
+            st.session_state[qty_key] = 1
+        if disc_key not in st.session_state:
+            st.session_state[disc_key] = 0.0
+    
+    # Initialize quantity and discount session state for each custom product
+    for idx, _ in enumerate(st.session_state.custom_products):
+        custom_qty_key = f"custom_qty_{idx}"
+        custom_disc_key = f"custom_disc_{idx}"
+        if custom_qty_key not in st.session_state:
+            st.session_state[custom_qty_key] = 1
+        if custom_disc_key not in st.session_state:
+            st.session_state[custom_disc_key] = 0.0
+    
+    # Restore quantities and discounts from cart if available
+    if 'cart' in st.session_state and st.session_state.cart:
+        for item in st.session_state.cart:
+            if not item.get('is_custom', False):
+                # Find the row index for this product
+                for idx in st.session_state.row_indices:
+                    prod_key = f"prod_{idx}"
+                    if st.session_state.selected_products.get(prod_key) == item['Item']:
+                        st.session_state[f"qty_{idx}"] = item.get('Quantity', 1)
+                        st.session_state[f"disc_{idx}"] = item.get('Discount %', 0.0)
+                        break
+            else:
+                # Restore custom product quantities and discounts
+                for idx, custom_prod in enumerate(st.session_state.custom_products):
+                    if custom_prod['Item'] == item['Item']:
+                        st.session_state[f"custom_qty_{idx}"] = item.get('Quantity', 1)
+                        st.session_state[f"custom_disc_{idx}"] = item.get('Discount %', 0.0)
+                        break
 
     products = df['Item Name'].tolist()
     price_map = dict(zip(df['Item Name'], df['Selling Price']))
@@ -1953,6 +1998,67 @@ if ((st.session_state.role == "buyer") or
         st.markdown("---")
     # Initialize final_total to total_sum FIRST, before any conditional logic
     final_total = total_sum
+    
+    # Update cart with current product selections
+    if st.session_state.row_indices and st.session_state.selected_products:
+        for idx in st.session_state.row_indices:
+            prod_key = f"prod_{idx}"
+            if prod_key in st.session_state.selected_products and st.session_state.selected_products[prod_key]:
+                item_name = st.session_state.selected_products[prod_key]
+                qty = st.session_state.get(f"qty_{idx}", 1)
+                disc = st.session_state.get(f"disc_{idx}", 0.0)
+                price = st.session_state.price_edits.get(item_name, df[df['Item Name'] == item_name]['Selling Price'].iloc[0] if not df[df['Item Name'] == item_name].empty else 0.0)
+                description = st.session_state.description_edits.get(item_name, df[df['Item Name'] == item_name]['Sales Description'].iloc[0] if not df[df['Item Name'] == item_name].empty else "")
+                
+                # Find existing item in cart or add new one
+                cart_item = None
+                for item in st.session_state.cart:
+                    if item['Item'] == item_name and not item.get('is_custom', False):
+                        cart_item = item
+                        break
+                
+                if cart_item:
+                    cart_item['Quantity'] = qty
+                    cart_item['Discount %'] = disc
+                    cart_item['Price'] = price
+                    cart_item['Description'] = description
+                else:
+                    st.session_state.cart.append({
+                        'Item': item_name,
+                        'Quantity': qty,
+                        'Price': price,
+                        'Discount %': disc,
+                        'Description': description,
+                        'is_custom': False
+                    })
+    
+    # Update cart with custom products
+    if st.session_state.custom_products:
+        for idx, custom_prod in enumerate(st.session_state.custom_products):
+            qty = st.session_state.get(f"custom_qty_{idx}", 1)
+            disc = st.session_state.get(f"custom_disc_{idx}", 0.0)
+            
+            # Find existing custom item in cart or add new one
+            cart_item = None
+            for item in st.session_state.cart:
+                if item['Item'] == custom_prod['Item'] and item.get('is_custom', False):
+                    cart_item = item
+                    break
+            
+            if cart_item:
+                cart_item['Quantity'] = qty
+                cart_item['Discount %'] = disc
+                cart_item['Price'] = custom_prod['Price per item']
+                cart_item['Description'] = custom_prod['Description']
+            else:
+                st.session_state.cart.append({
+                    'Item': custom_prod['Item'],
+                    'Quantity': qty,
+                    'Price': custom_prod['Price per item'],
+                    'Discount %': disc,
+                    'Description': custom_prod['Description'],
+                    'is_custom': True
+                })
 
     if not checkDiscount:
         overall_discount = st.number_input("🧮 Overall Quotation Discount (%)", min_value=0.0, max_value=100.0, step=0.1, value=0.0)
@@ -3462,4 +3568,3 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
-
