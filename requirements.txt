@@ -4,5 +4,6 @@ pillow>=10.0.0
 gspread==6.1.1
 gspread-dataframe==3.3.0
 requests==2.31.0
-reportlab==4.0.9
+reportlab==4.4.3
+
 
