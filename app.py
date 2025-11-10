@@ -2145,7 +2145,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         ]
         if company_details.get("address"):
             detail_lines.append(f"<b>Address:</b> <font color='black'>{company_details['address']}</font><br/>")
-        detail_lines.append(f"<b>Cell Phone:</b> <font color='black'>{company_details['contact_phone']}</font><br/>")
+        # detail_lines.append(f"<b>Cell Phone:</b> <font color='black'>{company_details['contact_phone']}</font><br/>")
         if company_details.get("contact_email"):
             detail_lines.append(f"<b>Contact Email:</b> <font color='black'>{company_details['contact_email']}</font><br/>")
         detail_lines.append("</font></para>")
@@ -3462,3 +3462,4 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
+
