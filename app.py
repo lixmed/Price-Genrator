@@ -378,7 +378,7 @@ def load_user_history(user_email, sheet):
                     "hash": row["Quotation Hash"]
                 })
             except Exception as e:
-                st.warning(f"⚠️ Skipping malformed row: {e}")
+                # st.warning(f"⚠️ Skipping malformed row: {e}")
                 continue
         return history
     except Exception as e:
@@ -784,7 +784,7 @@ if not st.session_state.logged_in:
                                         "hash": row["Quotation Hash"]
                                     })
                                 except Exception as e:
-                                    st.warning(f"⚠️ Skipping malformed row in history: {e}")
+                                    # st.warning(f"⚠️ Skipping malformed row in history: {e}")
                                     continue
 
                             # Save to session state
@@ -2155,7 +2155,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         ]
         if company_details.get("address"):
             detail_lines.append(f"<b>Address:</b> <font color='black'>{company_details['address']}</font><br/>")
-        # detail_lines.append(f"<b>Cell Phone:</b> <font color='black'>{company_details['contact_phone']}</font><br/>")
+        detail_lines.append(f"<b>Cell Phone:</b> <font color='black'>{company_details['contact_phone']}</font><br/>")
         if company_details.get("contact_email"):
             detail_lines.append(f"<b>Contact Email:</b> <font color='black'>{company_details['contact_email']}</font><br/>")
         detail_lines.append("</font></para>")
@@ -3165,7 +3165,7 @@ def load_user_history_from_sheet(user_email, sheet):
                     "company_details": company_details
                 })
             except Exception as e:
-                st.warning(f"⚠️ Skipping malformed row (Company: {row.get('Company Name', 'Unknown')}): {e}")
+                # st.warning(f"⚠️ Skipping malformed row (Company: {row.get('Company Name', 'Unknown')}): {e}")
                 continue
         return history
     except Exception as e:
