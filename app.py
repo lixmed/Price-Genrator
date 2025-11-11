@@ -25,6 +25,79 @@ import json
 # ========== Page Config ==========
 st.set_page_config(page_title="Quotation Builder", page_icon="🪑", layout="wide")
 
+
+
+MAX_ITEM_DISCOUNT = 20.0
+MAX_OVERALL_DISCOUNT = 20.0
+QUOTE_VALIDITY_DAYS = 10
+def initialize_quotation_state():
+    """Initialize all quotation-related session state variables"""
+    if 'cart' not in st.session_state:
+        st.session_state.cart = []
+    if 'custom_products' not in st.session_state:
+        st.session_state.custom_products = []
+    if 'shipping_fee' not in st.session_state:
+        st.session_state.shipping_fee = 0.0
+    if 'installation_fee' not in st.session_state:
+        st.session_state.installation_fee = 0.0
+    if 'row_indices' not in st.session_state:
+        st.session_state.row_indices = []
+    if 'selected_products' not in st.session_state:
+        st.session_state.selected_products = {}
+    if 'price_edits' not in st.session_state:
+        st.session_state.price_edits = {}
+    if 'discount_edits' not in st.session_state:
+        st.session_state.discount_edits = {}
+    if 'description_edits' not in st.session_state:
+        st.session_state.description_edits = {}
+
+
+
+def save_quotation_state():
+    """Save current quotation state before editing company details"""
+    st.session_state.saved_quotation_state = {
+        'row_indices': st.session_state.get('row_indices', []).copy(),
+        'selected_products': st.session_state.get('selected_products', {}).copy(),
+        'price_edits': st.session_state.get('price_edits', {}).copy(),
+        'discount_edits': st.session_state.get('discount_edits', {}).copy(),
+        'description_edits': st.session_state.get('description_edits', {}).copy(),
+        'custom_products': st.session_state.get('custom_products', []).copy(),
+        'shipping_fee': st.session_state.get('shipping_fee', 0.0),
+        'installation_fee': st.session_state.get('installation_fee', 0.0),
+        'cart': st.session_state.get('cart', []).copy(),
+    }
+    
+    # Save all quantity and discount inputs
+    qty_disc_keys = {}
+    for key in st.session_state.keys():
+        if key.startswith('qty_') or key.startswith('disc_') or key.startswith('custom_qty_') or key.startswith('custom_disc_'):
+            qty_disc_keys[key] = st.session_state[key]
+    
+    st.session_state.saved_quotation_state['qty_disc_keys'] = qty_disc_keys
+
+def restore_quotation_state():
+    """Restore quotation state after editing company details"""
+    if 'saved_quotation_state' in st.session_state:
+        saved = st.session_state.saved_quotation_state
+        
+        st.session_state.row_indices = saved.get('row_indices', [])
+        st.session_state.selected_products = saved.get('selected_products', {})
+        st.session_state.price_edits = saved.get('price_edits', {})
+        st.session_state.discount_edits = saved.get('discount_edits', {})
+        st.session_state.description_edits = saved.get('description_edits', {})
+        st.session_state.custom_products = saved.get('custom_products', [])
+        st.session_state.shipping_fee = saved.get('shipping_fee', 0.0)
+        st.session_state.installation_fee = saved.get('installation_fee', 0.0)
+        st.session_state.cart = saved.get('cart', [])
+        
+        # Restore quantity and discount inputs
+        qty_disc_keys = saved.get('qty_disc_keys', {})
+        for key, value in qty_disc_keys.items():
+            st.session_state[key] = value
+        
+        # Clear the saved state after restoration
+        del st.session_state.saved_quotation_state
+
 # ========== User Credentials ==========
 def init_session_state():
     """Initialize session state variables"""
@@ -850,7 +923,6 @@ if st.session_state.role == "admin":
     if st.session_state.admin_choice == "database":
         tab1, tab2, tab3 = st.tabs(["➕ Add Product", "🗑 Delete Product", "✏ Update Product"])
         
-
         with tab1:
             st.subheader("Add New Product")
             form_col, image_col = st.columns([2, 1])
@@ -862,7 +934,6 @@ if st.session_state.role == "admin":
                     new_desc = st.text_area("Material / Description")
                     new_color = st.text_input("Color")
                     new_dim = st.text_input("Dimensions (Optional)")
-                    # Warranty field is correctly implemented here
                     new_warranty = st.text_input("Warranty (e.g., 1 year)", help="Enter warranty information")
                     new_image = st.text_input("Image URL (Optional)", help="Paste Google Drive link or direct image URL")
                     
@@ -874,24 +945,19 @@ if st.session_state.role == "admin":
                         elif new_item in df["Item Name"].values:
                             st.error(f"❌ A product with the name '{new_item}' already exists!")
                         else:
-                            # Convert image URL if provided
                             converted_image_url = convert_google_drive_url_for_storage(new_image) if new_image else ""
-                            
-                            # Create new row with correct CF.Warranty mapping
                             new_row = {
                                 "Item Name": new_item.strip(),
                                 "Selling Price": new_price,
                                 "Sales Description": new_desc,
                                 "CF.Colors": new_color,
                                 "CF.Dimensions": new_dim,
-                                "CF.Warranty": new_warranty,  # Correctly mapped to sheet column
+                                "CF.Warranty": new_warranty,
                                 "CF.image url": converted_image_url
                             }
                             
-                            # Append to DataFrame
                             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                             
-                            # Save to Google Sheet
                             try:
                                 set_with_dataframe(sheet, df)
                                 st.cache_data.clear()
@@ -911,9 +977,8 @@ if st.session_state.role == "admin":
                 st.markdown("• Direct image URLs (.jpg, .png, etc.)")
                 st.markdown("• Google Drive shared links")
                 st.markdown("**Example:**")
-                st.code("https://drive.google.com/file/d/1vN8l2FX.../view    ", language="text")
+                st.code("https://drive.google.com/file/d/1vN8l2FX.../view", language="text")
         
-
         with tab2:
             st.subheader("Delete Product")
             with st.form("delete_product_form"):
@@ -949,7 +1014,7 @@ if st.session_state.role == "admin":
                         if len(matching_rows) == 0:
                             st.error("❌ Product not found.")
                         else:
-                            row_index = matching_rows.index[0] + 2  # +2 because df index starts at 0, sheet starts at 1 + header row
+                            row_index = matching_rows.index[0] + 2 
                             try:
                                 sheet.delete_rows(int(row_index))
                                 st.cache_data.clear()
@@ -958,7 +1023,6 @@ if st.session_state.role == "admin":
                             except Exception as e:
                                 st.error(f"❌ Failed to delete row: {str(e)}")
         
-
         with tab3:
             st.subheader("Update Product")
             form_col, image_col = st.columns([2, 1])
@@ -1003,7 +1067,6 @@ if st.session_state.role == "admin":
                         else:
                             converted_image_url = convert_google_drive_url_for_storage(updated_image) if updated_image else ""
                             
-                            # Update the DataFrame
                             df.loc[df["Item Name"] == selected_product, [
                                 "Item Name",
                                 "Selling Price",
@@ -1030,7 +1093,6 @@ if st.session_state.role == "admin":
                             except Exception as e:
                                 st.error(f"❌ Failed to save update: {str(e)}")
             
-            # Right column: Preview current & updated data
             with image_col:
                 st.markdown("### Current Product Data:")
                 if selected_product and existing_row is not None:
@@ -1063,19 +1125,19 @@ if st.session_state.role == "admin":
         
         st.stop()
 
-    # ========== QUOTATION CREATION ==========
-
-    # ========== QUOTATION CREATION ==========
-    # ========== QUOTATION CREATION ==========
+    # ********************* quotation form  *********************
     elif st.session_state.admin_choice == "quotation":
         st.header("📋 Admin - Create Quotation")
         
-        # Handle post-submission options
+        # Initialize quotation state
+        initialize_quotation_state()
+        
         if st.session_state.get('form_submitted', False):
             st.subheader("Choose an option:")
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("✏️ Edit Company Info", use_container_width=True):
+                    save_quotation_state()  # Save current state
                     st.session_state.edit_mode = True
                     st.session_state.form_submitted = False
                     st.rerun()
@@ -1105,37 +1167,39 @@ if st.session_state.role == "admin":
                             "prepared_by": st.session_state.username,
                             "prepared_by_email": st.session_state.user_email,
                             "current_date": datetime.now().strftime("%A, %B %d, %Y"),
-                            "valid_till": (datetime.now() + timedelta(days=10)).strftime("%A, %B %d, %Y"),
+                            "valid_till": (datetime.now() + timedelta(days=QUOTE_VALIDITY_DAYS)).strftime("%A, %B %d, %Y"),
                             "quotation_validity": "30 days"
                         }
                     st.session_state.cart = []
+                    st.session_state.custom_products = []
+                    st.session_state.row_indices = []
+                    st.session_state.selected_products = {}
+                    st.session_state.price_edits = {}
+                    st.session_state.discount_edits = {}
+                    st.session_state.description_edits = {}
+                    st.session_state.shipping_fee = 0.0
+                    st.session_state.installation_fee = 0.0
                     if 'selected_items' in st.session_state:
                         st.session_state.selected_items = []
                     if 'pdf_data' in st.session_state:
                         st.session_state.pdf_data = []
-                    keys_to_clear = [key for key in st.session_state.keys() if 'selected_' in key or 'item_' in key]
+                    keys_to_clear = [key for key in st.session_state.keys() if 'selected_' in key or 'item_' in key or 'qty_' in key or 'disc_' in key]
                     for key in keys_to_clear:
                         del st.session_state[key]
-                    # Clear Zoho-specific session state
                     if 'zoho_accounts' in st.session_state:
                         del st.session_state.zoho_accounts
                     st.success("🆕 New quotation started - all items cleared!")
                     st.rerun()
 
-        # Only show company details section if form not submitted
         if not st.session_state.get('form_submitted', False):
-            # Initialize session state for Zoho accounts
             if 'zoho_accounts' not in st.session_state:
                 st.session_state.zoho_accounts = None
                 
-            # Zoho CRM Integration Section
             st.subheader("🔗 Fetch from Zoho CRM")
             
-            # Fetch accounts button
             if st.button("Fetch Accounts from Zoho", use_container_width=True):
                 with st.spinner("📡 Connecting to Zoho CRM..."):
                     try:
-                        # IMPORTANT: This fetches ALL required fields
                         accounts = fetch_zoho_accounts()
                         if accounts:
                             st.session_state.zoho_accounts = accounts
@@ -1147,7 +1211,6 @@ if st.session_state.role == "admin":
                         st.error(f"❌ Failed to connect to Zoho CRM: {str(e)}")
                         st.session_state.zoho_accounts = None
             
-            # Show account selection if accounts were fetched
             if st.session_state.zoho_accounts:
                 account_names = [acc.get("Account_Name", "") for acc in st.session_state.zoho_accounts if acc.get("Account_Name")]
                 
@@ -1158,12 +1221,10 @@ if st.session_state.role == "admin":
                         key="zoho_account_select"
                     )
                     
-                    # Load selected account button
                     if selected_acc != "-- Select Account --" and st.button("Load Selected Account", use_container_width=True):
                         chosen_data = next(acc for acc in st.session_state.zoho_accounts 
                                         if acc.get("Account_Name") == selected_acc)
                         
-                        # Extract owner (contact person) safely - this handles both dict and string formats
                         owner = chosen_data.get("Owner", {})
                         contact_person = ""
                         if isinstance(owner, dict):
@@ -1171,30 +1232,23 @@ if st.session_state.role == "admin":
                         elif isinstance(owner, str):
                             contact_person = owner
                         
-                        # Extract email - may be nested or directly available
                         email = ""
                         if "Email" in chosen_data:
                             email = chosen_data["Email"]
                         elif "email" in chosen_data:
                             email = chosen_data["email"]
                         
-                        # DEBUG: Show what data we're getting from Zoho
-                        # st.write("DEBUG: Selected Account Data:", chosen_data)
-                        
-                        # Auto-fill session_state to populate form
-                        # Preserve existing company_details if it exists
                         if 'company_details' not in st.session_state:
                             st.session_state.company_details = {}
                         
-                        # Update only specific fields from Zoho
                         st.session_state.company_details.update({
                             "company_name": chosen_data.get("Account_Name", st.session_state.company_details.get("company_name", "")),
                             "contact_person": contact_person,
                             "contact_email": email,
                             "contact_phone": chosen_data.get("Phone", st.session_state.company_details.get("contact_phone", "")),
                             "address": chosen_data.get("Billing_Street", st.session_state.company_details.get("address", "")),
-                            "tax_id": chosen_data.get("Tax_ID", st.session_state.company_details.get("tax_id", "626180228")),  # Preserve default/existing
-                            "reg_no": chosen_data.get("Registration_No", st.session_state.company_details.get("reg_no", "15971"))  # Preserve default/existing
+                            "tax_id": chosen_data.get("Tax_ID", st.session_state.company_details.get("tax_id", "626180228")),
+                            "reg_no": chosen_data.get("Registration_No", st.session_state.company_details.get("reg_no", "15971"))
                         })
                         st.success(f"✅ Company details loaded for '{selected_acc}'!")
                         st.rerun()
@@ -1202,26 +1256,19 @@ if st.session_state.role == "admin":
                     st.warning("⚠️ No valid account names found in Zoho data")
                     st.session_state.zoho_accounts = None
             
-            # Company Details Form - This appears BEFORE product selection
             st.subheader("🏢 Company and Contact Details")
             edit_mode = st.session_state.get('edit_mode', False)
-            # CRITICAL FIX: Always use company_details from session state if it exists
             existing_data = st.session_state.get('company_details', {})
 
             with st.form(key="admin_company_details_form"):
-                # Company Name field will now get populated from Zoho (Account_Name)
                 company_name = st.text_input("🏢 Company Name", value=existing_data.get("company_name", ""))
                 
-                # Contact Person field will now get populated from Zoho (Owner)
                 contact_person = st.text_input("Contact Person", value=existing_data.get("contact_person", ""))
                 
-                # Contact Email field will now get populated from Zoho (Email)
                 contact_email = st.text_input("Contact Email (Optional)", value=existing_data.get("contact_email", ""))
                 
-                # Contact Phone field will now get populated from Zoho (Phone)
                 contact_phone = st.text_input("Contact Cell Phone", value=existing_data.get("contact_phone", ""))
                 
-                # Address field will now get populated from Zoho (Billing_Street)
                 address = st.text_area("Address (Optional)", placeholder="Enter address (optional)", value=existing_data.get("address", ""))
                 
                 st.subheader("Terms and Conditions")
@@ -1230,7 +1277,6 @@ if st.session_state.role == "admin":
                                             value=float(existing_data.get("down_payment", 50.0)))
                 delivery = st.text_input("Delivery", value=existing_data.get("delivery", "Expected in 3–4 weeks"))
                 
-                # VAT rate selection
                 selected_vat_rate = st.selectbox(
                     "Select VAT Rate (%)",
                     options=[0, 13, 14, 15],
@@ -1254,41 +1300,28 @@ if st.session_state.role == "admin":
                 tax_id = st.text_input("Tax ID", value=existing_data.get("tax_id") or "626180228")
                 reg_no = st.text_input("Commercial/Chamber Reg. No", value=existing_data.get("reg_no") or "15971")
                 
-                # Phone validation pattern
                 phone_pattern = r'^\+?\d+$'
                 
-                # --- ZOHO QUOTE OWNER SELECTION (Automatic) ---
                 if st.session_state.role == "admin":
                     with st.spinner("📡 Loading Zoho CRM users..."):
                         zoho_users = fetch_zoho_users()
                     
-                    # Find the logged-in user in the Zoho users list by matching email
                     current_user_email = st.session_state.user_email.lower().strip()
                     matched_user = next((u for u in zoho_users if u["email"].lower().strip() == current_user_email), None)
                     
                     if matched_user:
-                        # ✅ User found in Zoho CRM
                         st.success(f"👤 Quote Owner: **{matched_user['name']}** (from Zoho CRM)")
                         st.write(f"📧 Email: `{matched_user['email']}`")
                         
-                        # Set the quote owner details directly
                         quote_owner_id = matched_user["id"]
                         quote_owner_name = matched_user["name"]
                         quote_owner_email = matched_user["email"]
-
                         prepared_by = quote_owner_name
                         prepared_by_email = quote_owner_email
-                        
-                        # You can optionally add a "Change Owner" button here for rare cases
-                        # if st.button("Change Quote Owner"):
-                        #     st.session_state.show_owner_select = True # (You'd need to manage this state)
-                        
                     else:
-                        # ❌ User not found in Zoho CRM
                         st.error(f"❌ Your email ({current_user_email}) was not found in Zoho CRM Active Users.")
                         st.info("Please contact your administrator to ensure your Zoho CRM user is active and your email is correct.")
                         
-                        # Fallback: Try to get the ID directly (less reliable)
                         fallback_id = get_zoho_user_id(current_user_email)
                         if fallback_id:
                             st.warning("⚠️ Using fallback method to get user ID.")
@@ -1300,26 +1333,21 @@ if st.session_state.role == "admin":
                             quote_owner_id = None
                             quote_owner_name = st.session_state.username
                             quote_owner_email = current_user_email
+                        
+                        prepared_by = quote_owner_name
+                        prepared_by_email = quote_owner_email
 
-
-                prepared_by = quote_owner_name  # Set prepared_by to quote owner
-                prepared_by_email = quote_owner_email  # Set prepared_by_email to quote owner
                 current_date = datetime.now().strftime("%A, %B %d, %Y")
-                valid_till = (datetime.now() + timedelta(days=10)).strftime("%A, %B %d, %Y")
+                valid_till = (datetime.now() + timedelta(days=QUOTE_VALIDITY_DAYS)).strftime("%A, %B %d, %Y")
                 quotation_validity = "30 days"
                 
                 submit_button_text = "Update Details" if edit_mode else "Submit Details"
                 
                 if st.form_submit_button(submit_button_text):
-                    # Validate phone number
                     if not re.match(phone_pattern, contact_phone):
                         st.error("❌ Invalid phone number format. Please use digits only (e.g., +201234567890).")
-                    # Validate required fields
-                    
-
-                    
                     elif not all([company_name, contact_person, contact_phone]):
-                        st.warning("⚠ Please fill in all required fields (Company Name, Contact Person, and Contact Phone).")
+                        st.warning("⚠️ Please fill in all required fields (Company Name, Contact Person, and Contact Phone).")
                     else:
                         st.session_state.form_submitted = True
                         st.session_state.company_details = {
@@ -1331,8 +1359,8 @@ if st.session_state.role == "admin":
                             "prepared_by": prepared_by,
                             "prepared_by_email": prepared_by_email,
                             "quote_owner_id": quote_owner_id,
-                            "quote_owner_name": quote_owner_name,  # Save quote owner name
-                            "quote_owner_email": quote_owner_email,  # Save quote owner email
+                            "quote_owner_name": quote_owner_name, 
+                            "quote_owner_email": quote_owner_email, 
                             "current_date": current_date,
                             "valid_till": valid_till,
                             "quotation_validity": quotation_validity,
@@ -1358,21 +1386,26 @@ if st.session_state.role == "admin":
                             "Prepared By": st.session_state.company_details["prepared_by"],
                             "Prepared By Email": st.session_state.company_details["prepared_by_email"]
                         })
-                        if 'edit_mode' in st.session_state:
-                            del st.session_state.edit_mode
-                        success_message = "✅ Details updated successfully!" if edit_mode else "✅ Details submitted successfully!"
-                        st.success(success_message)
+                        
+                        # Restore quotation state if editing
+                        if st.session_state.get('edit_mode', False):
+                            restore_quotation_state()
+                            st.session_state.edit_mode = False
+                            st.success("✅ Details updated successfully! Your quotation has been restored.")
+                        else:
+                            st.success("✅ Details submitted successfully!")
+                        
                         st.rerun()
 
-            # Always show this warning if form not submitted
             if not st.session_state.get('form_submitted', False):
-                st.warning("⚠ Please fill in your company details to continue")
+                st.warning("⚠️ Please fill in your company details to continue")
                 st.stop()
 
 
 elif st.session_state.role == "buyer":
     st.header("🛍  Buy Products & Get Quotation")
     
+    initialize_quotation_state()
   
     if 'quotation_in_progress' not in st.session_state:
         st.subheader("Get Started with Your Quotation")
@@ -1384,9 +1417,7 @@ elif st.session_state.role == "buyer":
             st.rerun()
         st.stop()
 
-    # Only proceed if quotation process has been started
     if st.session_state.get('quotation_in_progress', False):
-        # Handle post-submission options
         if st.session_state.get('form_submitted', False):
             st.subheader("Choose an option:")
             col1, col2 = st.columns(2)
@@ -1433,27 +1464,21 @@ elif st.session_state.role == "buyer":
                     keys_to_clear = [key for key in st.session_state.keys() if 'selected_' in key or 'item_' in key]
                     for key in keys_to_clear:
                         del st.session_state[key]
-                    # Clear Zoho-specific session state
                     if 'zoho_accounts' in st.session_state:
                         del st.session_state.zoho_accounts
                     st.success("🆕 New quotation started - all items cleared!")
                     st.rerun()
         
-        # Show company details form if not submitted
         if not st.session_state.get('form_submitted', False):
-            # Initialize session state for Zoho accounts
             if 'zoho_accounts' not in st.session_state:
                 st.session_state.zoho_accounts = None
                 
-            # Zoho CRM section - now clearly marked as optional
             st.subheader("🔗 Fetch from Zoho CRM (Optional)")
             st.caption("You can fill the form manually or use Zoho CRM data")
             
-            # Fetch accounts button
             if st.button("Fetch Accounts from Zoho", use_container_width=True):
                 with st.spinner("📡 Connecting to Zoho CRM..."):
                     try:
-                        # Fetch ALL required fields
                         accounts = fetch_zoho_accounts()
                         if accounts:
                             st.session_state.zoho_accounts = accounts
@@ -1465,7 +1490,6 @@ elif st.session_state.role == "buyer":
                         st.error(f"❌ Failed to connect to Zoho CRM: {str(e)}")
                         st.session_state.zoho_accounts = None
             
-            # Show account selection if accounts were fetched
             if st.session_state.zoho_accounts:
                 account_names = [acc.get("Account_Name", "") for acc in st.session_state.zoho_accounts if acc.get("Account_Name")]
                 if account_names:
@@ -1475,12 +1499,10 @@ elif st.session_state.role == "buyer":
                         key="zoho_account_select"
                     )
                     
-                    # Load selected account button
                     if selected_acc != "-- Select Account --" and st.button("Load Selected Account", use_container_width=True):
                         chosen_data = next(acc for acc in st.session_state.zoho_accounts 
                                         if acc.get("Account_Name") == selected_acc)
                         
-                        # Extract owner (contact person) safely
                         owner = chosen_data.get("Owner", {})
                         contact_person = ""
                         if isinstance(owner, dict):
@@ -1488,14 +1510,12 @@ elif st.session_state.role == "buyer":
                         elif isinstance(owner, str):
                             contact_person = owner
                         
-                        # Extract email
                         email = ""
                         if "Email" in chosen_data:
                             email = chosen_data["Email"]
                         elif "email" in chosen_data:
                             email = chosen_data["email"]
                         
-                        # Auto-fill session_state
                         st.session_state.company_details = {
                             "company_name": chosen_data.get("Account_Name", ""),
                             "contact_person": contact_person,
@@ -1511,7 +1531,6 @@ elif st.session_state.role == "buyer":
                     st.warning("⚠ No valid account names found in Zoho data")
                     st.session_state.zoho_accounts = None
             
-            # ALWAYS SHOW THE FORM (this is the key fix)
             st.subheader("🏢 Company and Contact Details")
             edit_mode = st.session_state.get('edit_mode', False)
             existing_data = st.session_state.get('company_details', {})
@@ -1529,7 +1548,6 @@ elif st.session_state.role == "buyer":
                                             value=float(existing_data.get("down_payment", 50.0)))
                 delivery = st.text_input("Delivery", value=existing_data.get("delivery", "Expected in 3–4 weeks"))
                 
-                # VAT rate selection
                 selected_vat_rate = st.selectbox(
                     "Select VAT Rate (%)",
                     options=[0, 13, 14, 15],
@@ -1553,11 +1571,9 @@ elif st.session_state.role == "buyer":
                 tax_id = st.text_input("Tax ID", value=existing_data.get("tax_id", "626180228"))
                 reg_no = st.text_input("Commercial/Chamber Reg. No", value=existing_data.get("reg_no", "15971"))
                 
-                # Phone validation pattern
                 phone_pattern = r'^\+?\d+$'
                 
                 
-                # - ZOHO QUOTE OWNER SELECTION (Automatic) -
                 if st.session_state.role == "buyer":
                     with st.spinner("📡 Loading Zoho CRM users..."):
                         zoho_users = fetch_zoho_users()
@@ -1570,12 +1586,10 @@ elif st.session_state.role == "buyer":
                             st.success(f"👤 Quote Owner: **{matched_user['name']}** (from Zoho CRM)")
                             st.write(f"📧 Email: `{matched_user['email']}`")
 
-                            # ✅ Set owner details
                             quote_owner_id = matched_user["id"]
                             quote_owner_name = matched_user["name"]
                             quote_owner_email = matched_user["email"]
 
-                            # ✅ CRITICAL: Define prepared_by so it can be used in form submit
                             prepared_by = quote_owner_name
                             prepared_by_email = quote_owner_email
 
@@ -1583,12 +1597,10 @@ elif st.session_state.role == "buyer":
                             st.error(f"❌ Your email ({current_user_email}) was not found in Zoho CRM Active Users.")
                             st.info("Please contact your administrator to ensure your Zoho CRM user is active.")
 
-                            # Fallback
                             quote_owner_id = None
                             quote_owner_name = st.session_state.username
                             quote_owner_email = st.session_state.user_email
 
-                            # ✅ Still assign to prepared_by
                             prepared_by = quote_owner_name
                             prepared_by_email = quote_owner_email
 
@@ -1600,10 +1612,8 @@ elif st.session_state.role == "buyer":
                 submit_button_text = "Update Details" if edit_mode else "Submit Details"
                 
                 if st.form_submit_button(submit_button_text):
-                    # Validate phone number
                     if not re.match(phone_pattern, contact_phone):
                         st.error("❌ Invalid phone number format. Please use digits only (e.g., +201234567890).")
-                    # Validate required fields
                     elif not all([company_name, contact_person, contact_phone]):
                         st.warning("⚠ Please fill in all required fields (Company Name, Contact Person, and Contact Phone).")
                     else:
@@ -1617,8 +1627,8 @@ elif st.session_state.role == "buyer":
                             "prepared_by": prepared_by,
                             "prepared_by_email": prepared_by_email,
                             "quote_owner_id": quote_owner_id,
-                            "quote_owner_name": quote_owner_name,  # Save quote owner name
-                            "quote_owner_email": quote_owner_email,  # Save quote owner email
+                            "quote_owner_name": quote_owner_name,
+                            "quote_owner_email": quote_owner_email,
                             "current_date": current_date,
                             "valid_till": valid_till,
                             "quotation_validity": quotation_validity,
@@ -1635,10 +1645,24 @@ elif st.session_state.role == "buyer":
                             "tax_id": tax_id,
                             "reg_no": reg_no
                         }
-                        if 'edit_mode' in st.session_state:
-                            del st.session_state.edit_mode
-                        success_message = "✅ Details updated successfully!" if edit_mode else "✅ Details submitted successfully!"
-                        st.success(success_message)
+                        # Debug output to verify saved details
+                        st.write("🔍 Debug - Saved Company Details:", {
+                            "Company Name": st.session_state.company_details["company_name"],
+                            "Quote Owner ID": st.session_state.company_details["quote_owner_id"],
+                            "Quote Owner Name": st.session_state.company_details["quote_owner_name"],
+                            "Quote Owner Email": st.session_state.company_details["quote_owner_email"],
+                            "Prepared By": st.session_state.company_details["prepared_by"],
+                            "Prepared By Email": st.session_state.company_details["prepared_by_email"]
+                        })
+                        
+                        # Restore quotation state if editing
+                        if st.session_state.get('edit_mode', False):
+                            restore_quotation_state()
+                            st.session_state.edit_mode = False
+                            st.success("✅ Details updated successfully! Your quotation has been restored.")
+                        else:
+                            st.success("✅ Details submitted successfully!")
+                        
                         st.rerun()
             
             # Always show this warning if form not submitted
@@ -1647,15 +1671,18 @@ elif st.session_state.role == "buyer":
                 st.stop()
             st.stop
 
-# ========== Quotation Display Section ==========
+
+
+
+
+
+# *************************** quotation creation section ***********************************
 if ((st.session_state.role == "buyer") or 
     (st.session_state.role == "admin" and st.session_state.get('admin_choice') == "quotation")) and \
     st.session_state.get('form_submitted', False):
-    # Initialize session state for custom products if not exists
     if 'custom_products' not in st.session_state:
         st.session_state.custom_products = []
     
-    # Initialize shipping and installation fees if not exists
     if 'shipping_fee' not in st.session_state:
         st.session_state.shipping_fee = 0.0
     if 'installation_fee' not in st.session_state:
@@ -1673,11 +1700,9 @@ if ((st.session_state.role == "buyer") or
     if 'cart' not in st.session_state:
         st.session_state.cart = []
     
-    # Initialize price edits session state if not exists
     if 'price_edits' not in st.session_state:
         st.session_state.price_edits = {}
     
-    # Initialize discount edits session state if not exists
     if 'discount_edits' not in st.session_state:
         st.session_state.discount_edits = {}
 
@@ -1703,9 +1728,7 @@ if ((st.session_state.role == "buyer") or
     checkDiscount = False
     basePrice = 0.0
     
-    # Process regular products first
     for idx in st.session_state.row_indices:
-        # Update column definition to include description
         c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 = st.columns([3.0, 3.0, 1.8, 1.4, 2.5, 2.0, 2.0, 2.0, 2.0, 0.8])
         
         prod_key = f"prod_{idx}"
@@ -1719,36 +1742,28 @@ if ((st.session_state.role == "buyer") or
         if c10.button("X", key=f"clear_{idx}"):
             st.session_state.row_indices.remove(idx)
             st.session_state.selected_products.pop(prod_key, None)
-            # Clear price edits for this product
             if prod in st.session_state.price_edits:
                 del st.session_state.price_edits[prod]
             if prod in st.session_state.discount_edits:
                 del st.session_state.discount_edits[prod]
-            # Clear description edits for this product
             if prod in st.session_state.description_edits:
                 del st.session_state.description_edits[prod]
             st.rerun()
         
         if prod != "-- Select --":
-            # Initialize description edit for this product if not exists
             if prod not in st.session_state.description_edits:
                 st.session_state.description_edits[prod] = desc_map.get(prod, "")
             
-            # Description (editable)
             description = c2.text_area("", 
                             value=st.session_state.description_edits[prod], 
                             key=f"desc_{idx}",
                             label_visibility="collapsed",
                             height=68)
-            # Update session state with new description
             st.session_state.description_edits[prod] = description
             
-            # Get original price from map
             original_price = price_map[prod]
-            # Initialize price edit for this product if not exists
             if prod not in st.session_state.price_edits:
                 st.session_state.price_edits[prod] = original_price
-            # Price per item (editable)
             edited_price = c6.number_input(
                 "", 
                 min_value=0.0, 
@@ -1757,23 +1772,20 @@ if ((st.session_state.role == "buyer") or
                 key=f"price_{idx}",
                 label_visibility="collapsed"
             )
-            # Update session state with new price
             st.session_state.price_edits[prod] = edited_price
-            # Quantity
             qty = c7.number_input(
                 "", 
                 min_value=1, 
-                value=st.session_state.get(f"qty_{idx}", 1),  # ✅ Read from session state
+                value=st.session_state.get(f"qty_{idx}", 1),
                 step=1, 
                 key=f"qty_{idx}", 
                 label_visibility="collapsed"
             )
-            # Discount (editable)
             discount = c8.number_input(
                 "", 
                 min_value=0.0, 
                 max_value=100.0, 
-                value=st.session_state.get(f"disc_{idx}", 0.0),  # ✅ Read from session state
+                value=st.session_state.get(f"disc_{idx}", 0.0),
                 step=1.0, 
                 key=f"disc_{idx}", 
                 label_visibility="collapsed"
@@ -1783,18 +1795,14 @@ if ((st.session_state.role == "buyer") or
                 st.warning(f"⚠ Max 20% discount allowed for '{prod}'. Ignoring discount.")
             if valid_discount > 0:
                 checkDiscount = True
-            # Calculate with edited price
             basePrice += edited_price * qty
             discounted_price = edited_price * (1 - valid_discount / 100)
             line_total = discounted_price * qty
-            # Display image
             image_url = image_map.get(prod, "")
             display_product_image(c5, prod, image_url)
-            # Display totals
             c9.write(f"{line_total:.2f} EGP")
             c3.write(f"{SKU_map.get(prod, 'N/A')}")
             c4.write(f"{Warranty_map.get(prod, 'N/A')}")
-            # Add to output data
             output_data.append({
                 "Item": prod,
                 "Description": description,
@@ -1802,7 +1810,7 @@ if ((st.session_state.role == "buyer") or
                 "Dimensions": dim_map.get(prod, ""),
                 "Image": convert_google_drive_url_for_display(image_url) if image_url else "",
                 "Quantity": qty,
-                "Price per item": edited_price,  # Use edited price
+                "Price per item": edited_price,
                 "Discount %": valid_discount,
                 "Total price": line_total,
                 "SKU": SKU_map.get(prod, ""),
@@ -1817,7 +1825,7 @@ if ((st.session_state.role == "buyer") or
         st.session_state.row_indices.append(max(st.session_state.row_indices, default=-1) + 1)
         st.rerun()
     
-    # ====== CUSTOM PRODUCT SECTION ======
+    # ********************************** Custom Product *************************************
     st.markdown("---")
     st.subheader("✨ Add Custom Product")
     
@@ -1871,34 +1879,23 @@ if ((st.session_state.role == "buyer") or
             st.markdown("**Example:**")
             st.code("https://drive.google.com/file/d/1vN8l2FX.../view", language="text")
     
-    # Display custom products in the main product table
+
+
     for idx, custom_product in enumerate(st.session_state.custom_products):
         c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 = st.columns([3.0, 3.0, 1.8, 1.4, 2.5, 2.0, 2.0, 2.0, 2.0, 0.8])
         
-        # Mark as custom product
         c1.markdown(f"**{custom_product['Item']}**  \n`[Custom Product]`")
-        
-        # Description (editable)
         description = c2.text_area("", 
                         value=custom_product.get("Description", ""), 
                         key=f"custom_desc_{idx}",
                         label_visibility="collapsed",
                         height=68)
         
-        # Update description in session state
         st.session_state.custom_products[idx]["Description"] = description
-        
-        # SKU - N/A for custom products
         c3.write("N/A")
-        
-        # Warranty
         c4.write(custom_product.get("Warranty", "N/A"))
-        
-        # Image
         image_url = custom_product.get("Image", "")
         display_product_image(c5, custom_product['Item'], image_url)
-        
-        # Price per item (editable)
         edited_price = c6.number_input(
             "", 
             min_value=0.0, 
@@ -1908,32 +1905,21 @@ if ((st.session_state.role == "buyer") or
             label_visibility="collapsed"
         )
         st.session_state.custom_products[idx]["Price per item"] = edited_price
-        
-        # Quantity
         qty = c7.number_input("", min_value=1, value=1, step=1, key=f"custom_qty_{idx}", label_visibility="collapsed")
-        
-        # Discount (editable)
         discount = c8.number_input("", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"custom_disc_{idx}", label_visibility="collapsed")
         valid_discount = 0.0 if discount > 20 else discount
         if discount > 20:
             st.warning(f"⚠ Max 20% discount allowed for '{custom_product['Item']}'. Ignoring discount.")
         if valid_discount > 0:
             checkDiscount = True
-        
-        # Calculate with edited price
         basePrice += edited_price * qty
         discounted_price = edited_price * (1 - valid_discount / 100)
         line_total = discounted_price * qty
-        
-        # Display totals
         c9.write(f"{line_total:.2f} EGP")
-        
-        # Clear button
         if c10.button("X", key=f"custom_clear_{idx}"):
             st.session_state.custom_products.pop(idx)
             st.rerun()
-        
-        # Add to output data
+
         output_data.append({
             "Item": custom_product["Item"],
             "Description": description,
@@ -1951,7 +1937,6 @@ if ((st.session_state.role == "buyer") or
         total_sum += line_total
 
         st.markdown("---")
-    # Initialize final_total to total_sum FIRST, before any conditional logic
     final_total = total_sum
 
     if not checkDiscount:
@@ -2068,6 +2053,31 @@ def download_image_for_pdf(url, max_size=(300, 300)):
         print(f"Image download/resize failed: {e}")
         return None
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# **************************** PDF Generations*****************************
 @st.cache_data
 def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_path="footer (1).png",
                      intro_path="FT-Quotation-Temp-financial.jpg", closure_path="FT-Quotation-Temp-2.jpg",
