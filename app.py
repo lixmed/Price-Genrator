@@ -64,6 +64,7 @@ def save_quotation_state():
         'custom_products': st.session_state.get('custom_products', []).copy(),
         'shipping_fee': st.session_state.get('shipping_fee', 0.0),
         'installation_fee': st.session_state.get('installation_fee', 0.0),
+        'overall_discount': st.session_state.get('overall_discount', 0.0),
         'cart': st.session_state.get('cart', []).copy(),
     }
     
@@ -88,6 +89,7 @@ def restore_quotation_state():
         st.session_state.custom_products = saved.get('custom_products', [])
         st.session_state.shipping_fee = saved.get('shipping_fee', 0.0)
         st.session_state.installation_fee = saved.get('installation_fee', 0.0)
+        st.session_state.overall_discount = saved.get('overall_discount', 0.0)
         st.session_state.cart = saved.get('cart', [])
         
         # Restore quantity and discount inputs
@@ -1940,7 +1942,15 @@ if ((st.session_state.role == "buyer") or
     final_total = total_sum
 
     if not checkDiscount:
-        overall_discount = st.number_input("🧮 Overall Quotation Discount (%)", min_value=0.0, max_value=100.0, step=0.1, value=0.0)
+        overall_discount = st.number_input(
+        "🧮 Overall Quotation Discount (%)",
+        min_value=0.0,
+        max_value=100.0,
+        step=0.1,
+        value=st.session_state.get("overall_discount", 0.0)  # ✅ استرجاع القيمة القديمة لو موجودة
+        )
+
+        st.session_state.overall_discount = overall_discount
         if overall_discount > 15.0:
             if st.button("🚀 Request AI Approval for High Discount"):
                 with st.spinner("📡 Connecting to HQ AI Negotiator..."):
@@ -1955,6 +1965,7 @@ if ((st.session_state.role == "buyer") or
                     st.balloons()
                     final_total = total_sum * (1 - 17.3 / 100)
                     approved_overall_discount = 17.3
+                    st.session_state.overall_discount = approved_overall_discount
                 st.markdown(f"📉 **Overall Discount Amount:** {total_sum * (approved_overall_discount/100):.2f} EGP ({approved_overall_discount:.1f}%)")
             else:
                 st.warning("💡 Try clicking 'Request AI Approval' for discounts over 15%!")
@@ -1970,7 +1981,6 @@ if ((st.session_state.role == "buyer") or
         else:
             st.markdown(f"🧾 **Final Total:** {final_total:.2f} EGP")
     else:
-        # Calculate total discount amount from item-level discounts
         total_discount_amount = basePrice - total_sum
         
         st.markdown("### 📊 Discount Summary (Item-Level)")
@@ -3139,6 +3149,13 @@ def load_user_history_from_sheet(user_email, sheet):
         for _, row in user_rows.iterrows():
             try:
                 items = json.loads(row["Items JSON"])
+                overall_discount = 0.0
+                if "Overall Discount" in df.columns:
+                    val = row.get("Overall Discount", 0.0)
+                    try:
+                        overall_discount = float(val) if not pd.isna(val) else 0.0
+                    except:
+                        overall_discount = 0.0
                 company_details_raw = row.get("Company Details JSON", "{}")
                 try:
                     company_details = json.loads(company_details_raw) if pd.notna(company_details_raw) and company_details_raw.strip() != "" else {}
@@ -3162,7 +3179,8 @@ def load_user_history_from_sheet(user_email, sheet):
                     "items": items,
                     "pdf_filename": row["PDF Filename"],
                     "hash": stored_hash,  # Always ensure this exists
-                    "company_details": company_details
+                    "company_details": company_details,
+                    "overall_discount": overall_discount
                 })
             except Exception as e:
                 # st.warning(f"⚠️ Skipping malformed row (Company: {row.get('Company Name', 'Unknown')}): {e}")
@@ -3218,6 +3236,7 @@ if st.button("📅 Generate Financial Quotation") and output_data:
                     new_record["quotation_hash"],
                     json.dumps(company_details)
                 ]
+                row.append(st.session_state.get("overall_discount", 0.0))
                 history_sheet.append_row(row)
                 st.success("✅ Quotation saved to session and Google Sheet!")
             except Exception as e:
@@ -3283,6 +3302,7 @@ if st.button("📅 Generate technical Quotation ") and output_data:
                     new_record["quotation_hash"],
                     json.dumps(company_details)
                 ]
+                row.append(st.session_state.get("overall_discount", 0.0))
                 history_sheet.append_row(row)
                 st.success("✅ Quotation saved to session and Google Sheet!")
             except Exception as e:
