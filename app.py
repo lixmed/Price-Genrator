@@ -204,7 +204,7 @@ def fetch_zoho_users():
             })
         return users
     except Exception as e:
-        st.error(f"❌ Failed to fetch Zoho users: {str(e)}")
+        # st.error(f"❌ Failed to fetch Zoho users: {str(e)}")
         return []
 
 
@@ -1321,7 +1321,7 @@ if st.session_state.role == "admin":
                         prepared_by = quote_owner_name
                         prepared_by_email = quote_owner_email
                     else:
-                        st.error(f"❌ Your email ({current_user_email}) was not found in Zoho CRM Active Users.")
+                        # st.error(f"❌ Your email ({current_user_email}) was not found in Zoho CRM Active Users.")
                         st.info("Please contact your administrator to ensure your Zoho CRM user is active and your email is correct.")
                         
                         fallback_id = get_zoho_user_id(current_user_email)
@@ -1331,7 +1331,7 @@ if st.session_state.role == "admin":
                             quote_owner_name = st.session_state.username
                             quote_owner_email = current_user_email
                         else:
-                            st.error("❌ Could not get a valid user ID from Zoho CRM. Quote creation may fail.")
+                            # st.error("❌ Could not get a valid user ID from Zoho CRM. Quote creation may fail.")
                             quote_owner_id = None
                             quote_owner_name = st.session_state.username
                             quote_owner_email = current_user_email
@@ -1596,8 +1596,8 @@ elif st.session_state.role == "buyer":
                             prepared_by_email = quote_owner_email
 
                         else:
-                            st.error(f"❌ Your email ({current_user_email}) was not found in Zoho CRM Active Users.")
-                            st.info("Please contact your administrator to ensure your Zoho CRM user is active.")
+                            # st.error(f"❌ Your email ({current_user_email}) was not found in Zoho CRM Active Users.")
+                            # st.info("Please contact your administrator to ensure your Zoho CRM user is active.")
 
                             quote_owner_id = None
                             quote_owner_name = st.session_state.username
@@ -3492,3 +3492,4 @@ if st.button("📤 Save This Quotation to Zoho CRM", type="primary"):
             shipping_fee=st.session_state.shipping_fee,
             installation_fee=st.session_state.installation_fee,
         )
+
