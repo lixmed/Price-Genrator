@@ -1156,7 +1156,7 @@ if st.session_state.role == "admin":
                             "contact_phone": "",
                             "address": "",
                             "warranty": old_details.get("warranty", "1 year"),
-                            "down_payment": old_details.get("down_payment", 50.0),
+                           # "down_payment": old_details.get("down_payment", 50.0),
                             "delivery": old_details.get("delivery", "Expected in 3–4 weeks"),
                             "vat_note": old_details.get("vat_note", "Prices exclude 14% VAT"),
                             "shipping_note": old_details.get("shipping_note", "Shipping & Installation fees to be added"),
@@ -1275,8 +1275,8 @@ if st.session_state.role == "admin":
                 
                 st.subheader("Terms and Conditions")
                 warranty = st.text_input("Warranty", value=existing_data.get("warranty", "1 year"))
-                down_payment = st.number_input("Down payment (%)", min_value=0.0, max_value=100.0, 
-                                            value=float(existing_data.get("down_payment", 50.0)))
+               
+                #down_payment = st.number_input("Down payment (%)", min_value=0.0, max_value=100.0, value=float(existing_data.get("down_payment", 50.0)))
                 delivery = st.text_input("Delivery", value=existing_data.get("delivery", "Expected in 3–4 weeks"))
                 
                 selected_vat_rate = st.selectbox(
@@ -1370,7 +1370,7 @@ if st.session_state.role == "admin":
                             "valid_till": valid_till,
                             "quotation_validity": quotation_validity,
                             "warranty": warranty,
-                            "down_payment": down_payment,
+                        #    "down_payment": down_payment,
                             "delivery": delivery,
                             "vat_note": vat_note,
                             "vat_rate": selected_vat_rate / 100.0,
@@ -1446,7 +1446,7 @@ elif st.session_state.role == "buyer":
                             "contact_phone": "",
                             "address": "",
                             "warranty": old_details.get("warranty", "1 year"),
-                            "down_payment": old_details.get("down_payment", 50.0),
+                       #     "down_payment": old_details.get("down_payment", 50.0),
                             "delivery": old_details.get("delivery", "Expected in 3–4 weeks"),
                             "vat_note": old_details.get("vat_note", "Prices exclude 14% VAT"),
                             "shipping_note": old_details.get("shipping_note", "Shipping & Installation fees to be added"),
@@ -1551,8 +1551,7 @@ elif st.session_state.role == "buyer":
                 
                 st.subheader("Terms and Conditions")
                 warranty = st.text_input("Warranty", value=existing_data.get("warranty", "1 year"))
-                down_payment = st.number_input("Down payment (%)", min_value=0.0, max_value=100.0, 
-                                            value=float(existing_data.get("down_payment", 50.0)))
+             #   down_payment = st.number_input("Down payment (%)", min_value=0.0, max_value=100.0, value=float(existing_data.get("down_payment", 50.0)))
                 delivery = st.text_input("Delivery", value=existing_data.get("delivery", "Expected in 3–4 weeks"))
                 
                 selected_vat_rate = st.selectbox(
@@ -1643,7 +1642,7 @@ elif st.session_state.role == "buyer":
                             "valid_till": valid_till,
                             "quotation_validity": quotation_validity,
                             "warranty": warranty,
-                            "down_payment": down_payment,
+                       #     "down_payment": down_payment,
                             "delivery": delivery,
                             "vat_note": vat_note,
                             "vat_rate": selected_vat_rate / 100.0,
@@ -2171,6 +2170,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
             f"<b>Contact Person:</b> <font color='black'>{company_details['contact_person']}</font><br/>",
             f"<b>Company Name:</b> <font color='black'>{company_details['company_name']}</font><br/>",
         ]
+        #  • Down payment: {company_details['down_payment']}% of the total invoice<br/>
         if company_details.get("address"):
             detail_lines.append(f"<b>Address:</b> <font color='black'>{company_details['address']}</font><br/>")
         detail_lines.append(f"<b>Cell Phone:</b> <font color='black'>{company_details['contact_phone']}</font><br/>")
@@ -2188,7 +2188,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         <font size=14>
         <b>Terms and Conditions:</b><br/>
         • Warranty: {company_details['warranty']}<br/>
-        • Down payment: {company_details['down_payment']}% of the total invoice<br/>
+       
         • Delivery: {company_details['delivery']}<br/>
         • {company_details['vat_note']}<br/>
         • {company_details['shipping_note']}<br/>
@@ -3425,7 +3425,7 @@ def create_zoho_quote(company_details, items, final_total, shipping_fee=0, insta
                 "Shipping_Country": country,
                 "Terms_and_Conditions": (
                     f"Warranty: {company_details['warranty']}\n"
-                    f"Down Payment: {company_details['down_payment']}%\n"
+                #    f"Down Payment: {company_details['down_payment']}%\n"
                     f"Delivery: {company_details['delivery']}\n"
                     f"{company_details['shipping_note']}"
                 ),
