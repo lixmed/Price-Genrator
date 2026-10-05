@@ -1291,6 +1291,9 @@ if st.session_state.role == "admin":
                 
                 shipping_note = st.text_input("Shipping Note", 
                                             value=existing_data.get("shipping_note", "Shipping & Installation fees to be added"))
+
+
+                payment_terms = st.text_area("Payment Terms",value=existing_data.get("payment_terms", "50% Deposit upon confirmation of the order.\n50% Balance upon delivery."),height=80)
                 
                 st.subheader("Payment Info")
                 bank = st.text_input("Bank", value=existing_data.get("bank", "CIB"))
@@ -1372,6 +1375,7 @@ if st.session_state.role == "admin":
                             "vat_note": vat_note,
                             "vat_rate": selected_vat_rate / 100.0,
                             "shipping_note": shipping_note,
+                            "payment_terms": payment_terms,
                             "bank": bank,
                             "iban": iban,
                             "account_number": account_number,
@@ -1446,6 +1450,7 @@ elif st.session_state.role == "buyer":
                             "delivery": old_details.get("delivery", "Expected in 3–4 weeks"),
                             "vat_note": old_details.get("vat_note", "Prices exclude 14% VAT"),
                             "shipping_note": old_details.get("shipping_note", "Shipping & Installation fees to be added"),
+                            "payment_terms": "50% Deposit upon confirmation of the order.\n50% Balance upon delivery.",
                             "bank": old_details.get("bank", "CIB"),
                             "iban": old_details.get("iban", "EG340010015100000100049865966"),
                             "account_number": old_details.get("account_number", "100049865966"),
@@ -1560,8 +1565,11 @@ elif st.session_state.role == "buyer":
                 else:
                     vat_note = "No VAT applied"
                 
-                shipping_note = st.text_input("Shipping Note", 
-                                            value=existing_data.get("shipping_note", "Shipping & Installation fees to be added"))
+                shipping_note = st.text_input("Shipping Note", value=existing_data.get("shipping_note", "Shipping & Installation fees to be added"))
+
+                payment_terms = st.text_area("Payment Terms",
+                value=existing_data.get("payment_terms", "50% Deposit upon confirmation of the order.\n50% Balance upon delivery."),
+                height=80)
                 
                 st.subheader("Payment Info")
                 bank = st.text_input("Bank", value=existing_data.get("bank", "CIB"))
@@ -2174,6 +2182,7 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         elems.append(Spacer(1, 20))
         elems.append(Paragraph(details, aligned_style))
         # === Terms & Conditions ===
+        payment_terms_html = company_details.get('payment_terms', '').replace('\n', '<br/>')
         terms_conditions = f"""
         <para align="left">
         <font size=14>
@@ -2183,6 +2192,9 @@ def build_pdf_cached(data_hash, total, company_details, hdr_path="q2.png", ftr_p
         • Delivery: {company_details['delivery']}<br/>
         • {company_details['vat_note']}<br/>
         • {company_details['shipping_note']}<br/>
+        <br/>
+        <b>Payment Terms:</b><br/>
+        {payment_terms_html}
         </font>
         </para>
         """
