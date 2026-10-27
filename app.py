@@ -29,7 +29,7 @@ st.set_page_config(page_title="Quotation Builder", page_icon="🪑", layout="wid
 
 MAX_ITEM_DISCOUNT = 20.0
 MAX_OVERALL_DISCOUNT = 20.0
-QUOTE_VALIDITY_DAYS = 7
+QUOTE_VALIDITY_DAYS = 1
 def initialize_quotation_state():
     """Initialize all quotation-related session state variables"""
     if 'cart' not in st.session_state:
@@ -1170,7 +1170,7 @@ if st.session_state.role == "admin":
                             "prepared_by_email": st.session_state.user_email,
                             "current_date": datetime.now().strftime("%A, %B %d, %Y"),
                             "valid_till": (datetime.now() + timedelta(days=QUOTE_VALIDITY_DAYS)).strftime("%A, %B %d, %Y"),
-                            "quotation_validity": "1 Week"
+                            "quotation_validity": "1 day"
                         }
                     st.session_state.cart = []
                     st.session_state.custom_products = []
@@ -1344,7 +1344,7 @@ if st.session_state.role == "admin":
 
                 current_date = datetime.now().strftime("%A, %B %d, %Y")
                 valid_till = (datetime.now() + timedelta(days=QUOTE_VALIDITY_DAYS)).strftime("%A, %B %d, %Y")
-                quotation_validity = "1 Week"
+                quotation_validity = "1 day"
                 
                 submit_button_text = "Update Details" if edit_mode else "Submit Details"
                 
@@ -1460,8 +1460,8 @@ elif st.session_state.role == "buyer":
                             "prepared_by": st.session_state.username,
                             "prepared_by_email": st.session_state.user_email,
                             "current_date": datetime.now().strftime("%A, %B %d, %Y"),
-                            "valid_till": (datetime.now() + timedelta(days=7)).strftime("%A, %B %d, %Y"),
-                            "quotation_validity": "1 Week"
+                            "valid_till": (datetime.now() + timedelta(days=1)).strftime("%A, %B %d, %Y"),
+                            "quotation_validity": "1 day"
                         }
                     st.session_state.cart = []
                     if 'selected_items' in st.session_state:
@@ -1615,8 +1615,8 @@ elif st.session_state.role == "buyer":
 
 
                 current_date = datetime.now().strftime("%A, %B %d, %Y")
-                valid_till = (datetime.now() + timedelta(days=7)).strftime("%A, %B %d, %Y")
-                quotation_validity = "1 Week"
+                valid_till = (datetime.now() + timedelta(days=1)).strftime("%A, %B %d, %Y")
+                quotation_validity = "1 day"
                 
                 submit_button_text = "Update Details" if edit_mode else "Submit Details"
                 
